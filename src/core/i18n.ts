@@ -277,7 +277,6 @@ const EN: Record<string, string> = {
   "链接无效": "Invalid link",
   "间隔内的多次修改合并为一次提交。切换标签页或关闭页面时会立即保存；“仅手动”模式下，离开页面时仍会保存一次。": "Changes within the interval are combined into one commit. Saves happen immediately when you switch tabs or close the page. In Manual mode, it still saves once when you leave.",
   "需要口令": "A passphrase is required",
-  "页边": "Marginalia",
   "页面底色": "Page tint",
   "页面底色只在浅色模式下生效。": "Page tint applies in light mode only.",
   "颜色 {c}": "Color {c}",

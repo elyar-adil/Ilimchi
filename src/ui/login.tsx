@@ -41,7 +41,7 @@ export function Login({ onConnected, initialError }: { onConnected: (s: Session)
 
   return (
     <main class="login">
-      <h1>{tr('页边')}</h1>
+      <h1>Ilimchi</h1>
       <p class="muted">
         {tr('PDF 直接从 arXiv 等站点在你的浏览器里读取；笔记和批注保存在你自己的 GitHub 私有仓库中。没有任何自建服务器。')}
       </p>
