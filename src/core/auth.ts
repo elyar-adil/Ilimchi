@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import { GitHubClient, GitHubError, type RepoInfo } from './github';
 import type { Idb } from './idb';
 import { Vault, type VaultMode } from './vault';
@@ -56,14 +57,14 @@ export function clearConfig(): void {
 
 export class ChooseRepoError extends Error {
   constructor(public repos: RepoInfo[]) {
-    super('请选择用于存放笔记的仓库');
+    super(tr('请选择用于存放笔记的仓库'));
     this.name = 'ChooseRepoError';
   }
 }
 
 export class PublicRepoError extends Error {
   constructor(public fullName: string) {
-    super(`仓库 ${fullName} 是公开的，你的全部笔记将对所有人可见。建议改用私有仓库。`);
+    super(tr('仓库 {fullName} 是公开的，你的全部笔记将对所有人可见。建议改用私有仓库。', { fullName }));
     this.name = 'PublicRepoError';
   }
 }
@@ -90,12 +91,12 @@ export function parseRepoInput(input: string): { owner: string; repo: string } |
 
 export async function connect(input: ConnectInput, vault: Vault, fetchImpl?: typeof fetch): Promise<Session> {
   const token = input.token.trim();
-  if (!token) throw new Error('请粘贴 GitHub 令牌');
-  if (/\s/.test(token)) throw new Error('令牌中不应包含空白字符');
+  if (!token) throw new Error(tr('请粘贴 GitHub 令牌'));
+  if (/\s/.test(token)) throw new Error(tr('令牌中不应包含空白字符'));
 
   const warnings: string[] = [];
   if (/^(ghp_|gho_)/.test(token)) {
-    warnings.push('你使用的是经典令牌，权限范围很大（可访问你所有仓库）。强烈建议改用只限单个仓库的 fine-grained 令牌。');
+    warnings.push(tr('你使用的是经典令牌，权限范围很大（可访问你所有仓库）。强烈建议改用只限单个仓库的 fine-grained 令牌。'));
   }
 
   // 先用占位仓库验证令牌并取得登录名
@@ -105,7 +106,7 @@ export async function connect(input: ConnectInput, vault: Vault, fetchImpl?: typ
   let owner: string;
   let repo: string;
   const explicit = input.repo ? parseRepoInput(input.repo) : null;
-  if (input.repo?.trim() && !explicit) throw new Error('仓库格式应为 owner/name');
+  if (input.repo?.trim() && !explicit) throw new Error(tr('仓库格式应为 owner/name'));
   if (explicit) {
     ({ owner, repo } = explicit);
   } else {
@@ -114,7 +115,7 @@ export async function connect(input: ConnectInput, vault: Vault, fetchImpl?: typ
     const pick = preferred ?? (repos.length === 1 ? repos[0] : null);
     if (!pick) {
       if (repos.length === 0) {
-        throw new Error(`该令牌没有任何可写入的仓库。请先创建私有仓库（建议命名 ${DEFAULT_REPO}），并在令牌的 Repository access 中选中它。`);
+        throw new Error(tr('该令牌没有任何可写入的仓库。请先创建私有仓库（建议命名 {repo}），并在令牌的 Repository access 中选中它。', { repo: DEFAULT_REPO }));
       }
       throw new ChooseRepoError(repos);
     }
@@ -127,12 +128,12 @@ export async function connect(input: ConnectInput, vault: Vault, fetchImpl?: typ
     info = await client.getRepo();
   } catch (e) {
     if (e instanceof GitHubError && e.code === 'not_found') {
-      throw new Error(`找不到仓库 ${owner}/${repo}，或令牌无权访问它。请检查令牌的 Repository access。`);
+      throw new Error(tr('找不到仓库 {owner}/{repo}，或令牌无权访问它。请检查令牌的 Repository access。', { owner, repo }));
     }
     throw e;
   }
   if (info.permissions && !info.permissions.push) {
-    throw new Error(`令牌对 ${info.full_name} 没有写权限。请在令牌权限里给 Contents 选择 Read and write。`);
+    throw new Error(tr('令牌对 {name} 没有写权限。请在令牌权限里给 Contents 选择 Read and write。', { name: info.full_name }));
   }
   if (!info.private && !input.allowPublic) throw new PublicRepoError(info.full_name);
 
@@ -157,9 +158,9 @@ export async function restore(vault: Vault, fetchImpl?: typeof fetch): Promise<R
 
 export async function unlock(vault: Vault, passphrase: string, fetchImpl?: typeof fetch): Promise<Session> {
   const config = loadConfig();
-  if (!config) throw new Error('缺少账号配置，请重新登录');
+  if (!config) throw new Error(tr('缺少账号配置，请重新登录'));
   const secret = await vault.load(passphrase);
-  if (!secret) throw new Error('没有已保存的令牌，请重新登录');
+  if (!secret) throw new Error(tr('没有已保存的令牌，请重新登录'));
   return makeSession(secret.token, config, fetchImpl);
 }
 

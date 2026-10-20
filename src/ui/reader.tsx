@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { arxivRef, normalizeVersion, parseArxivId, withVersion } from '../core/ids';
 import { fetchArxivMeta, isNewerVersion } from '../core/arxivmeta';
@@ -164,7 +165,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           via = r.via;
         } else {
           const hit = await pdfCache.get(cacheKey(d.id, ''));
-          if (!hit) throw new PdfLoadError('这篇论文的 PDF 不在本设备上，请重新选择对应的文件', 'blocked');
+          if (!hit) throw new PdfLoadError(tr('这篇论文的 PDF 不在本设备上，请重新选择对应的文件'), 'blocked');
           bytes = hit.data;
         }
         const pdf = await openPdf(bytes);
@@ -556,7 +557,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   };
   /** 删除高亮前确认，删除后同步到其他设备 */
   const deleteHl = async (id: string) => {
-    const ok = await askConfirm({ title: '删除这条高亮？', message: '高亮及其批注会从所有设备中移除。', danger: true });
+    const ok = await askConfirm({ title: tr('删除这条高亮？'), message: tr('高亮及其批注会从所有设备中移除。'), danger: true });
     if (!ok) return;
     setHlSel(null);
     void edit((d) => removeAnnotation(d, id));
@@ -668,7 +669,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         title={displayTitle(doc)}
         page={currentPage}
         pages={pageCount}
-        zoomLabel={zoom === 1 ? '适宽' : `${Math.round(zoom * 100)}%`}
+        zoomLabel={zoom === 1 ? tr('适宽') : `${Math.round(zoom * 100)}%`}
         onBack={() => navigate('')}
         onZoomIn={() => zoomCenter(zoomRef.current * 1.25)}
         onZoomOut={() => zoomCenter(zoomRef.current / 1.25)}
@@ -684,10 +685,10 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
 
       {newVersion && (
         <div class="banner">
-          <span>arXiv 有新版本 {newVersion}</span>
+          <span>{tr('arXiv 有新版本 {v}', { v: newVersion })}</span>
           <div class="grow" />
-          <button class="ghost small" onClick={() => setNewVersion(null)}>忽略</button>
-          <button class="small" onClick={() => { void changeVersion(newVersion); setNewVersion(null); }}>切换</button>
+          <button class="ghost small" onClick={() => setNewVersion(null)}>{tr('忽略')}</button>
+          <button class="small" onClick={() => { void changeVersion(newVersion); setNewVersion(null); }}>{tr('切换')}</button>
         </div>
       )}
 
@@ -702,9 +703,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         >
           {load.kind === 'loading' && (
             <div class="status">
-              <p>正在打开</p>
+              <p>{tr('正在打开')}</p>
               <span class="muted small">
-                {load.total ? `${Math.round(((load.done ?? 0) / load.total) * 100)}%` : '直接从原站读取，不经过任何第三方服务器'}
+                {load.total ? `${Math.round(((load.done ?? 0) / load.total) * 100)}%` : tr('直接从原站读取，不经过任何第三方服务器')}
               </span>
             </div>
           )}
@@ -713,15 +714,15 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
             <div class="status">
               <p class="error">{load.message}</p>
               <div class="row center">
-                <button class="ghost" onClick={() => setReloadKey((k) => k + 1)}>重试</button>
+                <button class="ghost" onClick={() => setReloadKey((k) => k + 1)}>{tr('重试')}</button>
                 <label class="file-btn">
-                  选择本地 PDF
+                  {tr('选择本地 PDF')}
                   <input type="file" accept="application/pdf,.pdf" hidden onChange={(e) => {
                     const f = (e.target as HTMLInputElement).files?.[0];
                     if (f) void onAttachLocal(f);
                   }} />
                 </label>
-                {doc.sourceUrl && <a class="ghost btn" href={doc.sourceUrl} target="_blank" rel="noreferrer noopener">原文</a>}
+                {doc.sourceUrl && <a class="ghost btn" href={doc.sourceUrl} target="_blank" rel="noreferrer noopener">{tr('原文')}</a>}
               </div>
             </div>
           )}
@@ -768,10 +769,10 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           {pending && tool === 'select' && (
             <div class="selection-bar" style={{ top: `${pending.anchorTop - 52}px`, left: `${pending.anchorLeft}px` }} onMouseDown={(e) => e.preventDefault()}>
               {HIGHLIGHT_COLORS.map((c) => (
-                <button class={`swatch ${c}`} title={colorName(c)} aria-label={`${colorName(c)}高亮`} onClick={() => createHighlight(c, false)} />
+                <button class={`swatch ${c}`} title={colorName(c)} aria-label={tr('{color}高亮', { color: colorName(c) })} onClick={() => createHighlight(c, false)} />
               ))}
               <span class="sel-sep" />
-              <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>批注</button>
+              <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>{tr('批注')}</button>
             </div>
           )}
         </div>
@@ -791,23 +792,23 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         {showSide && (
           <aside class="side">
             <section class="cite">
-              <EditableText cls="cite-title" label="标题" value={doc.title} placeholder="未识别到标题" onSave={(v) => setMeta({ title: v })} />
-              <EditableText cls="cite-authors" label="作者" value={doc.authors} placeholder="添加作者" onSave={(v) => setMeta({ authors: v })} />
+              <EditableText cls="cite-title" label={tr('标题')} value={doc.title} placeholder={tr('未识别到标题')} onSave={(v) => setMeta({ title: v })} />
+              <EditableText cls="cite-authors" label={tr('作者')} value={doc.authors} placeholder={tr('添加作者')} onSave={(v) => setMeta({ authors: v })} />
               <div class="cite-line">
                 <span class="cite-source">{sourceLabel(doc)}</span>
-                <EditableText cls="cite-version" label="版本" value={doc.version} placeholder="最新版" onSave={(v) => void changeVersion(v)} />
+                <EditableText cls="cite-version" label={tr('版本')} value={doc.version} placeholder={tr('最新版')} onSave={(v) => void changeVersion(v)} />
               </div>
               <TagEditor tags={doc.tags} onChange={(tags) => void setMeta({ tags })} />
-              {doc.url === '' && <p class="cite-note">本机文件：笔记会同步，PDF 需在每台设备上单独打开。</p>}
+              {doc.url === '' && <p class="cite-note">{tr('本机文件：笔记会同步，PDF 需在每台设备上单独打开。')}</p>}
             </section>
 
             <section class="notes-section">
               <div class="section-head">
-                <span>笔记</span>
+                <span>{tr('笔记')}</span>
                 <span class="count">{anns.length + shapes.length}</span>
               </div>
               {anns.length + shapes.length === 0 && (
-                <p class="empty-note">选中文字即可高亮或写批注；也可以用文字、画笔工具直接在页面上书写。</p>
+                <p class="empty-note">{tr('选中文字即可高亮或写批注；也可以用文字、画笔工具直接在页面上书写。')}</p>
               )}
               <ul class="notes">
                 {marginItems(anns, shapes).map((it) =>
@@ -870,7 +871,7 @@ function NoteItem(props: {
   }, [props.autoEdit]);
   return (
     <li class={`note c-${a.color} ${props.focused ? 'focused' : ''}`} id={`ann-${a.id}`}>
-      <button class="note-page" onClick={props.onJump} title={`跳到第 ${a.page} 页`} aria-label={`跳到第 ${a.page} 页`}>
+      <button class="note-page" onClick={props.onJump} title={tr('跳到第 {page} 页', { page: a.page })} aria-label={tr('跳到第 {page} 页', { page: a.page })}>
         {a.page}
       </button>
       <div class="note-main">
@@ -880,8 +881,8 @@ function NoteItem(props: {
             value={note}
             autoFocus
             rows={2}
-            placeholder="写下批注"
-            aria-label="批注"
+            placeholder={tr('写下批注')}
+            aria-label={tr('批注')}
             onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
             onBlur={() => {
               if (note !== a.note) props.onSave({ note });
@@ -892,19 +893,19 @@ function NoteItem(props: {
         ) : a.note ? (
           <div class="note-body" onClick={() => setEditing(true)}>{a.note}</div>
         ) : null}
-        {props.unanchored && <p class="warn" title="PDF 版本可能不同，原文位置未能精确匹配">位置待确认</p>}
+        {props.unanchored && <p class="warn" title={tr('PDF 版本可能不同，原文位置未能精确匹配')}>{tr('位置待确认')}</p>}
       </div>
       <div class="note-actions">
         {!a.note && !editing && (
-          <button class="icon-btn tiny" title="写批注" aria-label="写批注" onClick={() => setEditing(true)}>
+          <button class="icon-btn tiny" title={tr('写批注')} aria-label={tr('写批注')} onClick={() => setEditing(true)}>
             <Icon name="edit" size={12} />
           </button>
         )}
         <button
           class="icon-btn tiny"
-          title="删除"
-          aria-label="删除批注"
-          onClick={async () => (await askConfirm({ title: '删除这条批注？', message: '批注及其高亮会从所有设备中移除。', danger: true })) && props.onDelete()}
+          title={tr('删除')}
+          aria-label={tr('删除批注')}
+          onClick={async () => (await askConfirm({ title: tr('删除这条批注？'), message: tr('批注及其高亮会从所有设备中移除。'), danger: true })) && props.onDelete()}
         >
           <Icon name="close" size={12} />
         </button>
@@ -914,11 +915,11 @@ function NoteItem(props: {
 }
 
 function ShapeItem({ shape, onJump, onDelete }: { shape: Shape; onJump: () => void; onDelete: () => void }) {
-  const kind = shape.kind === 'text' ? '文字' : shape.marker ? '荧光笔' : '画笔';
+  const kind = shape.kind === 'text' ? tr('文字') : shape.marker ? tr('荧光笔') : tr('画笔');
   const text = shape.kind === 'text' ? shape.text : '';
   return (
     <li class="note shape">
-      <button class="note-page" onClick={onJump} title={`跳到第 ${shape.page} 页`} aria-label={`跳到第 ${shape.page} 页`}>
+      <button class="note-page" onClick={onJump} title={tr('跳到第 {page} 页', { page: shape.page })} aria-label={tr('跳到第 {page} 页', { page: shape.page })}>
         {shape.page}
       </button>
       <div class="note-main">
@@ -927,9 +928,9 @@ function ShapeItem({ shape, onJump, onDelete }: { shape: Shape; onJump: () => vo
       </div>
       <button
         class="icon-btn tiny note-actions"
-        title="删除"
-        aria-label="删除"
-        onClick={async () => (await askConfirm({ title: `删除这项${kind}标注？`, message: '删除后会从所有设备中移除。', danger: true })) && onDelete()}
+        title={tr('删除')}
+        aria-label={tr('删除')}
+        onClick={async () => (await askConfirm({ title: tr('删除这项{kind}标注？', { kind }), message: tr('删除后会从所有设备中移除。'), danger: true })) && onDelete()}
       >
         <Icon name="close" size={12} />
       </button>
@@ -970,6 +971,6 @@ function without(s: Set<string>, id: string) {
 }
 
 function colorName(c: HighlightColor) {
-  return { yellow: '黄色', green: '绿色', blue: '蓝色', pink: '粉色', purple: '紫色' }[c];
+  return { yellow: tr('黄色'), green: tr('绿色'), blue: tr('蓝色'), pink: tr('粉色'), purple: tr('紫色') }[c];
 }
 

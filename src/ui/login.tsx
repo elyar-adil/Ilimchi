@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useState } from 'preact/hooks';
 import { ChooseRepoError, connect, type Config, type RememberMode, type Session } from '../core/auth';
 import type { RepoInfo } from '../core/github';
@@ -17,7 +18,7 @@ export function Login({ onConnected, initialError }: { onConnected: (s: Session)
   const submit = async (e: Event, chosenRepo?: string) => {
     e.preventDefault();
     setError(null);
-    if (remember === 'passphrase' && pass.length < 8) return setError('口令至少 8 个字符');
+    if (remember === 'passphrase' && pass.length < 8) return setError(tr('口令至少 8 个字符'));
     setBusy(true);
     try {
       const session = await connect({ token, repo: chosenRepo ?? repo, remember, passphrase: pass }, vault);
@@ -29,7 +30,7 @@ export function Login({ onConnected, initialError }: { onConnected: (s: Session)
     } catch (err) {
       if (err instanceof ChooseRepoError) {
         setChoices(err.repos);
-        setError('该令牌可访问多个仓库，请选择一个用于存放笔记：');
+        setError(tr('该令牌可访问多个仓库，请选择一个用于存放笔记：'));
       } else {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -40,32 +41,28 @@ export function Login({ onConnected, initialError }: { onConnected: (s: Session)
 
   return (
     <main class="login">
-      <h1>论文笔记</h1>
+      <h1>{tr('页边')}</h1>
       <p class="muted">
-        PDF 直接从 arXiv 等站点在你的浏览器里读取；笔记和批注保存在你自己的 GitHub 私有仓库中。没有任何自建服务器。
+        {tr('PDF 直接从 arXiv 等站点在你的浏览器里读取；笔记和批注保存在你自己的 GitHub 私有仓库中。没有任何自建服务器。')}
       </p>
 
       <details class="setup" open>
-        <summary>第一次使用：三步设置</summary>
+        <summary>{tr('第一次使用：三步设置')}</summary>
         <ol>
+          <li>{tr('在 GitHub 新建一个私有仓库，建议名 paper-notes-data（可以是空仓库）。')}</li>
           <li>
-            在 GitHub 新建一个<strong>私有</strong>仓库，建议名 <code>paper-notes-data</code>（可以是空仓库）。
-          </li>
-          <li>
-            打开{' '}
             <a href={TOKEN_URL} target="_blank" rel="noreferrer noopener">
-              创建 fine-grained 令牌
+              {tr('创建 fine-grained 令牌')}
             </a>
-            ：Repository access 选「Only select repositories」并只选上一步的仓库；Permissions 里把 <b>Contents</b> 设为
-            <b> Read and write</b>，其余保持默认。
+            {tr('：Repository access 选「Only select repositories」并只选上一步的仓库；Permissions 里把 Contents 设为 Read and write，其余保持默认。')}
           </li>
-          <li>把生成的令牌（github_pat_…）粘贴到下面。</li>
+          <li>{tr('把生成的令牌（github_pat_…）粘贴到下面。')}</li>
         </ol>
       </details>
 
       <form onSubmit={(e) => submit(e)} class="stack">
         <label>
-          GitHub 令牌
+          {tr('GitHub 令牌')}
           <input
             type="password"
             autoComplete="off"
@@ -77,34 +74,34 @@ export function Login({ onConnected, initialError }: { onConnected: (s: Session)
           />
         </label>
         <label>
-          仓库（可选，留空则自动选择）
+          {tr('仓库（可选，留空则自动选择）')}
           <input
             value={repo}
             onInput={(e) => setRepo((e.target as HTMLInputElement).value)}
-            placeholder="你的用户名/paper-notes-data"
+            placeholder={tr('你的用户名/paper-notes-data')}
             autoComplete="off"
             spellcheck={false}
           />
         </label>
 
         <fieldset class="remember">
-          <legend>令牌保存方式</legend>
+          <legend>{tr('令牌保存方式')}</legend>
           <label class="radio">
             <input type="radio" name="rem" checked={remember === 'session'} onChange={() => setRemember('session')} />
-            仅本次会话（关闭标签页即忘记，最安全）
+            {tr('仅本次会话（关闭标签页即忘记，最安全）')}
           </label>
           <label class="radio">
             <input type="radio" name="rem" checked={remember === 'device'} onChange={() => setRemember('device')} />
-            记住在本设备（加密存放于浏览器，无需每次输入）
+            {tr('记住在本设备（加密存放于浏览器，无需每次输入）')}
           </label>
           <label class="radio">
             <input type="radio" name="rem" checked={remember === 'passphrase'} onChange={() => setRemember('passphrase')} />
-            记住，但每次用口令解锁（最推荐用于共享电脑）
+            {tr('记住，但每次用口令解锁（最推荐用于共享电脑）')}
           </label>
           {remember === 'passphrase' && (
             <input
               type="password"
-              placeholder="设置口令（至少 8 位）"
+              placeholder={tr('设置口令（至少 8 位）')}
               value={pass}
               autoComplete="new-password"
               onInput={(e) => setPass((e.target as HTMLInputElement).value)}
@@ -123,11 +120,11 @@ export function Login({ onConnected, initialError }: { onConnected: (s: Session)
           </div>
         )}
         <button type="submit" disabled={busy || !token}>
-          {busy ? '正在验证…' : '连接 GitHub'}
+          {busy ? tr('正在验证…') : tr('连接 GitHub')}
         </button>
       </form>
       <p class="muted small">
-        令牌只发送到 api.github.com，并仅在你的浏览器内加密保存；不会写入代码或仓库。
+        {tr('令牌只发送到 api.github.com，并仅在你的浏览器内加密保存；不会写入代码或仓库。')}
       </p>
     </main>
   );
@@ -139,8 +136,8 @@ export function Unlock({ config, onUnlock, onForget }: { config: Config; onUnloc
   const [busy, setBusy] = useState(false);
   return (
     <main class="login">
-      <h1>解锁</h1>
-      <p class="muted">{config.login}，仓库 {config.owner}/{config.repo}</p>
+      <h1>{tr('解锁')}</h1>
+      <p class="muted">{config.login} · {config.owner}/{config.repo}</p>
       <form
         class="stack"
         onSubmit={async (e) => {
@@ -156,11 +153,11 @@ export function Unlock({ config, onUnlock, onForget }: { config: Config; onUnloc
           }
         }}
       >
-        <input type="password" placeholder="口令" value={pass} autoFocus onInput={(e) => setPass((e.target as HTMLInputElement).value)} />
+        <input type="password" placeholder={tr('口令')} value={pass} autoFocus onInput={(e) => setPass((e.target as HTMLInputElement).value)} />
         {error && <p class="error">{error}</p>}
-        <button type="submit" disabled={busy || !pass}>解锁</button>
+        <button type="submit" disabled={busy || !pass}>{tr('解锁')}</button>
       </form>
-      <button class="ghost" onClick={onForget}>忘记令牌，重新登录</button>
+      <button class="ghost" onClick={onForget}>{tr('忘记令牌，重新登录')}</button>
     </main>
   );
 }

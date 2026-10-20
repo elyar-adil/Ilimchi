@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import { compareAnnotations, compareShapes } from './model';
 import { FIELD_NAMES, type Annotation, type FieldName, type PaperDoc, type Progress, type Shape } from './types';
 
@@ -9,7 +10,7 @@ import { FIELD_NAMES, type Annotation, type FieldName, type PaperDoc, type Progr
  *  - 批注：按 id 取并集；同 id 取 updatedAt 较新者；删除用墓碑表示，所以删除也会同步
  */
 export function mergeDocs(a: PaperDoc, b: PaperDoc): PaperDoc {
-  if (a.id !== b.id) throw new Error(`不能合并不同论文: ${a.id} vs ${b.id}`);
+  if (a.id !== b.id) throw new Error(tr('不能合并不同论文: {a} vs {b}', { a: a.id, b: b.id }));
 
   const fieldTimes = {} as Record<FieldName, number>;
   const out: Record<string, unknown> = {};

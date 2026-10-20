@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { pdfjs, type PDFDoc } from '../pdf/engine';
 import type { Annotation, InkColor, InkShape, Rect, Shape, TextShape } from '../core/types';
@@ -385,8 +386,8 @@ export function PdfPage(props: Props) {
             <button
               type="button"
               class="hl-del"
-              aria-label="删除高亮"
-              title="删除高亮"
+              aria-label={tr('删除高亮')}
+              title={tr('删除高亮')}
               style={{ left: `${right * 100}%`, top: `${minY * 100}%` }}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -400,7 +401,7 @@ export function PdfPage(props: Props) {
           </div>
         );
       })()}
-      {!rendered && <div class="page-placeholder">第 {num} 页</div>}
+      {!rendered && <div class="page-placeholder">{tr('第 {num} 页', { num })}</div>}
     </div>
   );
 }
@@ -495,7 +496,7 @@ function TextBox(p: {
         value={value}
         autoFocus
         rows={Math.max(1, value.split('\n').length)}
-        placeholder="输入文字"
+        placeholder={tr('输入文字')}
         onInput={(e) => setValue((e.target as HTMLTextAreaElement).value)}
         onBlur={() => {
           setEditing(false);

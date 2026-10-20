@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import type { PaperRef } from './types';
 
 /**
@@ -56,7 +57,7 @@ export function normalizeUrl(u: URL): string {
 
 export async function resolvePaper(input: string): Promise<PaperRef> {
   const text = input.trim();
-  if (!text) throw new Error('请输入论文链接或 arXiv 编号');
+  if (!text) throw new Error(tr('请输入论文链接或 arXiv 编号'));
 
   const bare = parseArxivId(text);
   if (bare) return arxivRef(bare.id, bare.version);
@@ -65,10 +66,10 @@ export async function resolvePaper(input: string): Promise<PaperRef> {
   try {
     url = new URL(text);
   } catch {
-    throw new Error('无法识别的链接，请输入 http(s) 链接或 arXiv 编号');
+    throw new Error(tr('无法识别的链接，请输入 http(s) 链接或 arXiv 编号'));
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error('只支持 http(s) 链接');
+    throw new Error(tr('只支持 http(s) 链接'));
   }
   const host = url.hostname.toLowerCase();
 
@@ -77,7 +78,7 @@ export async function resolvePaper(input: string): Promise<PaperRef> {
     const rest = url.pathname.split('/').filter(Boolean).slice(1).join('/');
     const parsed = parseArxivId(rest);
     if (parsed) return arxivRef(parsed.id, parsed.version);
-    throw new Error('无法从该 arXiv 链接中识别论文编号');
+    throw new Error(tr('无法从该 arXiv 链接中识别论文编号'));
   }
 
   if (host === 'openreview.net' || host === 'www.openreview.net') {
@@ -128,7 +129,7 @@ export function normalizeVersion(input: string): string {
   const s = input.trim().toLowerCase();
   if (!s || s === 'latest' || s === '最新') return '';
   const m = /^v?(\d{1,3})$/.exec(s);
-  if (!m) throw new Error('版本格式应为 v1、v2… 或 latest');
+  if (!m) throw new Error(tr('版本格式应为 v1、v2… 或 latest'));
   return `v${Number(m[1])}`;
 }
 

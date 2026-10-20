@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import { cacheKey, UNVERSIONED_TTL_MS, type PdfCache } from './pdfcache';
 
 /**
@@ -62,9 +63,9 @@ export function assertHttpUrl(url: string): void {
   try {
     u = new URL(url);
   } catch {
-    throw new PdfLoadError('链接无效', 'bad_url');
+    throw new PdfLoadError(tr('链接无效'), 'bad_url');
   }
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new PdfLoadError('只支持 http(s) 链接', 'bad_url');
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new PdfLoadError(tr('只支持 http(s) 链接'), 'bad_url');
 }
 
 async function download(f: typeof fetch, url: string, opts: LoadOptions): Promise<ArrayBuffer> {
@@ -74,12 +75,12 @@ async function download(f: typeof fetch, url: string, opts: LoadOptions): Promis
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     // 浏览器不区分「CORS 被拒」和「断网」，统一当作被阻止处理
-    throw new PdfLoadError('浏览器无法直接读取该链接（对方站点可能未开放跨域访问，或网络不通）', 'blocked');
+    throw new PdfLoadError(tr('浏览器无法直接读取该链接（对方站点可能未开放跨域访问，或网络不通）'), 'blocked');
   }
-  if (!res.ok) throw new PdfLoadError(`下载失败：HTTP ${res.status}`, 'http', res.status);
+  if (!res.ok) throw new PdfLoadError(tr('下载失败：HTTP {status}', { status: res.status }), 'http', res.status);
 
   const total = Number(res.headers.get('content-length')) || 0;
-  if (total > MAX_PDF_BYTES) throw new PdfLoadError('PDF 过大（超过 150MB）', 'too_large');
+  if (total > MAX_PDF_BYTES) throw new PdfLoadError(tr('PDF 过大（超过 150MB）'), 'too_large');
 
   let data: ArrayBuffer;
   if (res.body && opts.onProgress) {
@@ -91,7 +92,7 @@ async function download(f: typeof fetch, url: string, opts: LoadOptions): Promis
       if (done) break;
       chunks.push(value);
       loaded += value.length;
-      if (loaded > MAX_PDF_BYTES) throw new PdfLoadError('PDF 过大（超过 150MB）', 'too_large');
+      if (loaded > MAX_PDF_BYTES) throw new PdfLoadError(tr('PDF 过大（超过 150MB）'), 'too_large');
       opts.onProgress(loaded, total);
     }
     const merged = new Uint8Array(loaded);
@@ -104,7 +105,7 @@ async function download(f: typeof fetch, url: string, opts: LoadOptions): Promis
   } else {
     data = await res.arrayBuffer();
   }
-  if (!isPdf(data)) throw new PdfLoadError('该链接返回的不是 PDF（可能是网页）。请使用论文的 PDF 直链', 'not_pdf');
+  if (!isPdf(data)) throw new PdfLoadError(tr('该链接返回的不是 PDF（可能是网页）。请使用论文的 PDF 直链'), 'not_pdf');
   return data;
 }
 
@@ -139,14 +140,14 @@ export async function loadPdf(opts: LoadOptions): Promise<LoadResult> {
     }
   }
   if (stale) return { data: stale, via: 'cache' };
-  throw lastErr instanceof Error ? lastErr : new PdfLoadError('加载失败', 'blocked');
+  throw lastErr instanceof Error ? lastErr : new PdfLoadError(tr('加载失败'), 'blocked');
 }
 
 /** 用户手动选择的本地 PDF：只在浏览器内处理，并固定缓存在本机。 */
 export async function importLocalPdf(file: File, cache?: PdfCache, paperId?: string, version = ''): Promise<ArrayBuffer> {
-  if (file.size > MAX_PDF_BYTES) throw new PdfLoadError('PDF 过大（超过 150MB）', 'too_large');
+  if (file.size > MAX_PDF_BYTES) throw new PdfLoadError(tr('PDF 过大（超过 150MB）'), 'too_large');
   const data = await file.arrayBuffer();
-  if (!isPdf(data)) throw new PdfLoadError('所选文件不是 PDF', 'not_pdf');
+  if (!isPdf(data)) throw new PdfLoadError(tr('所选文件不是 PDF'), 'not_pdf');
   if (cache && paperId) await cache.put(cacheKey(paperId, version), data, true).catch(() => {});
   return data;
 }

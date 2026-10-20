@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './icons';
 
@@ -69,7 +70,7 @@ export function EditableText({ value, placeholder, cls = '', label, onSave }: {
       class={`editable ${cls} ${value ? '' : 'is-empty'}`}
       role="button"
       tabIndex={0}
-      aria-label={`${label}：${value || '未填写'}，点击编辑`}
+      aria-label={tr('{label}：{value}，点击编辑', { label, value: value || tr('未填写') })}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') setEditing(true);
@@ -95,7 +96,7 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags:
       {tags.map((t) => (
         <span class="tag-chip" key={t}>
           <span>{t}</span>
-          <button class="chip-x" title="移除标签" aria-label={`移除标签 ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))}>
+          <button class="chip-x" title={tr('移除标签')} aria-label={tr('移除标签 {tag}', { tag: t })} onClick={() => onChange(tags.filter((x) => x !== t))}>
             <Icon name="close" size={10} />
           </button>
         </span>
@@ -105,8 +106,8 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags:
           class="tag-input"
           value={v}
           autoFocus
-          placeholder="标签名"
-          aria-label="新标签"
+          placeholder={tr('标签名')}
+          aria-label={tr('新标签')}
           onInput={(e) => setV((e.target as HTMLInputElement).value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') commit();
@@ -119,7 +120,7 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags:
           onBlur={commit}
         />
       ) : (
-        <button class="tag-add" onClick={() => setAdding(true)}>添加标签</button>
+        <button class="tag-add" onClick={() => setAdding(true)}>{tr('添加标签')}</button>
       )}
     </div>
   );

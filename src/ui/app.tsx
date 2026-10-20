@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useEffect, useState } from 'preact/hooks';
 import { restore, signOut, unlock, type Config, type Session } from '../core/auth';
 import { endSession, idb, startSession, vault } from '../core/services';
@@ -58,7 +59,7 @@ export function App() {
     navigate('');
   };
 
-  if (boot.kind === 'loading') return <div class="center muted">正在加载…</div>;
+  if (boot.kind === 'loading') return <div class="center muted">{tr('正在加载…')}</div>;
   if (boot.kind === 'login') return <Login onConnected={enter} initialError={bootError} />;
   if (boot.kind === 'locked') {
     return (

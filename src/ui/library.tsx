@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Session } from '../core/auth';
 import { resolvePaper, fileRef } from '../core/ids';
@@ -15,9 +16,9 @@ import { askConfirm } from './confirm';
 type View = { kind: 'all' } | { kind: 'untagged' } | { kind: 'trash' } | { kind: 'tag'; tag: string };
 
 const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'recent', label: '最近阅读' },
-  { id: 'added', label: '添加时间' },
-  { id: 'title', label: '标题' },
+  { id: 'recent', label: tr('最近阅读') },
+  { id: 'added', label: tr('添加时间') },
+  { id: 'title', label: tr('标题') },
 ];
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
@@ -75,7 +76,7 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
     return () => window.removeEventListener('keydown', onKey);
   }, [addOpen]);
 
-  const heading = view.kind === 'trash' ? '回收站' : view.kind === 'untagged' ? '未分类' : view.kind === 'tag' ? view.tag : '全部论文';
+  const heading = view.kind === 'trash' ? tr('回收站') : view.kind === 'untagged' ? tr('未分类') : view.kind === 'tag' ? view.tag : tr('全部论文');
 
   const changeSort = (s: SortKey) => {
     setSort(s);
@@ -126,9 +127,9 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
 
   const trashPapers = async (ids: string[]) => {
     const ok = await askConfirm({
-      title: ids.length === 1 ? '移入回收站？' : `移入回收站 ${ids.length} 篇论文？`,
-      message: '可以在回收站中恢复，30 天内不会被永久清除。',
-      confirmLabel: '移入回收站',
+      title: ids.length === 1 ? tr('移入回收站？') : tr('移入回收站 {n} 篇论文？', { n: ids.length }),
+      message: tr('可以在回收站中恢复，30 天内不会被永久清除。'),
+      confirmLabel: tr('移入回收站'),
       danger: true,
     });
     if (!ok) return;
@@ -147,9 +148,9 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
 
   const purge = async (ids: string[]) => {
     const ok = await askConfirm({
-      title: ids.length === 1 ? '永久清除这篇论文？' : `永久清除 ${ids.length} 篇论文？`,
-      message: '会清除标题、标签和全部笔记，且无法撤销。远端的历史提交仍可在 GitHub 中查看。',
-      confirmLabel: '永久清除',
+      title: ids.length === 1 ? tr('永久清除这篇论文？') : tr('永久清除 {n} 篇论文？', { n: ids.length }),
+      message: tr('会清除标题、标签和全部笔记，且无法撤销。远端的历史提交仍可在 GitHub 中查看。'),
+      confirmLabel: tr('永久清除'),
       danger: true,
     });
     if (!ok) return;
@@ -192,9 +193,9 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
 
   const deleteTag = async (tag: string, n: number) => {
     const ok = await askConfirm({
-      title: `删除标签「${tag}」？`,
-      message: `会从 ${n} 篇论文上移除这个标签。论文本身和笔记不会被删除。`,
-      confirmLabel: '删除标签',
+      title: tr('删除标签「{tag}」？', { tag }),
+      message: tr('会从 {n} 篇论文上移除这个标签。论文本身和笔记不会被删除。', { n }),
+      confirmLabel: tr('删除标签'),
       danger: true,
     });
     if (!ok) return;
@@ -212,16 +213,16 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
     <div class="library">
       <aside class="lib-index">
         <nav class="nav">
-          <NavItem icon="library" label="全部论文" count={all.length} active={sameView(view, { kind: 'all' })} onClick={() => setView({ kind: 'all' })} />
-          <NavItem icon="folder" label="未分类" count={untaggedCount} active={sameView(view, { kind: 'untagged' })} onClick={() => setView({ kind: 'untagged' })} />
-          <NavItem icon="trash" label="回收站" count={trashed.length} active={sameView(view, { kind: 'trash' })} onClick={() => setView({ kind: 'trash' })} />
+          <NavItem icon="library" label={tr('全部论文')} count={all.length} active={sameView(view, { kind: 'all' })} onClick={() => setView({ kind: 'all' })} />
+          <NavItem icon="folder" label={tr('未分类')} count={untaggedCount} active={sameView(view, { kind: 'untagged' })} onClick={() => setView({ kind: 'untagged' })} />
+          <NavItem icon="trash" label={tr('回收站')} count={trashed.length} active={sameView(view, { kind: 'trash' })} onClick={() => setView({ kind: 'trash' })} />
         </nav>
 
         {tags.length > 0 && (
           <>
             <div class="nav-title nav-title-row">
-              <span>标签</span>
-              <button class="icon-btn tiny" onClick={() => setEditingTags((v) => !v)} title={editingTags ? '完成' : '编辑标签'} aria-label={editingTags ? '完成' : '编辑标签'}>
+              <span>{tr('标签')}</span>
+              <button class="icon-btn tiny" onClick={() => setEditingTags((v) => !v)} title={editingTags ? tr('完成') : tr('编辑标签')} aria-label={editingTags ? tr('完成') : tr('编辑标签')}>
                 <Icon name={editingTags ? 'check' : 'edit'} size={12} />
               </button>
             </div>
@@ -249,17 +250,17 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
           <div class="grow" />
           <label class="search">
             <Icon name="search" size={14} />
-            <input type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} aria-label="搜索论文" />
+            <input type="search" placeholder={tr('搜索')} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} aria-label={tr('搜索论文')} />
           </label>
-          <select class="sort" value={sort} onChange={(e) => changeSort((e.target as HTMLSelectElement).value as SortKey)} aria-label="排序">
+          <select class="sort" value={sort} onChange={(e) => changeSort((e.target as HTMLSelectElement).value as SortKey)} aria-label={tr('排序')}>
             {SORTS.map((s) => <option value={s.id}>{s.label}</option>)}
           </select>
-          <button class={`icon-btn ${selecting ? 'on' : ''}`} onClick={() => { setSelecting((v) => !v); setPicked(new Set()); setTagBar(null); }} title="整理" aria-label="整理" aria-pressed={selecting}>
+          <button class={`icon-btn ${selecting ? 'on' : ''}`} onClick={() => { setSelecting((v) => !v); setPicked(new Set()); setTagBar(null); }} title={tr('整理')} aria-label={tr('整理')} aria-pressed={selecting}>
             <Icon name="list" />
           </button>
           {!inTrash && (
             <div class="add-anchor">
-              <button class="icon-btn add-btn" onClick={() => setAddOpen((v) => !v)} title="添加论文" aria-label="添加论文" aria-expanded={addOpen}>
+              <button class="icon-btn add-btn" onClick={() => setAddOpen((v) => !v)} title={tr('添加论文')} aria-label={tr('添加论文')} aria-expanded={addOpen}>
                 <Icon name="plus" />
               </button>
               {addOpen && (
@@ -273,7 +274,7 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
               )}
             </div>
           )}
-          <button class="icon-btn" onClick={onOpenSettings} title="设置" aria-label="设置">
+          <button class="icon-btn" onClick={onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
             <Icon name="gear" />
           </button>
         </header>
@@ -281,15 +282,15 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
         {shown.length === 0 ? (
           <div class="empty">
             {inTrash ? (
-              <p>回收站是空的</p>
+              <p>{tr('回收站是空的')}</p>
             ) : q ? (
-              <p>没有匹配的论文</p>
+              <p>{tr('没有匹配的论文')}</p>
             ) : view.kind === 'untagged' ? (
-              <p>所有论文都已分类</p>
+              <p>{tr('所有论文都已分类')}</p>
             ) : (
               <>
-                <p>还没有论文</p>
-                <p class="muted small">点击右上角的 + 粘贴链接，或打开本机 PDF。笔记会保存到你的 GitHub 仓库。</p>
+                <p>{tr('还没有论文')}</p>
+                <p class="muted small">{tr('点击右上角的 + 粘贴链接，或打开本机 PDF。笔记会保存到你的 GitHub 仓库。')}</p>
               </>
             )}
           </div>
@@ -313,38 +314,38 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
       </main>
 
       {selecting && (
-        <div class="bulk-bar" role="toolbar" aria-label="批量整理">
-          <span class="bulk-count">{ids.length === 0 ? '选择论文' : `已选 ${ids.length} 篇`}</span>
+        <div class="bulk-bar" role="toolbar" aria-label={tr('批量整理')}>
+          <span class="bulk-count">{ids.length === 0 ? tr('选择论文') : tr('已选 {n} 篇', { n: ids.length })}</span>
           {tagBar ? (
             <form class="bulk-tag" onSubmit={(e) => { e.preventDefault(); void submitTagBar(); }}>
               <input
                 value={tagInput}
                 onInput={(e) => setTagInput((e.target as HTMLInputElement).value)}
-                placeholder={tagBar === 'add' ? '新标签名' : '要移除的标签'}
+                placeholder={tagBar === 'add' ? tr('新标签名') : tr('要移除的标签')}
                 list={tagBar === 'remove' ? 'bulk-tags' : undefined}
                 autoFocus
-                aria-label={tagBar === 'add' ? '添加标签' : '移除标签'}
+                aria-label={tagBar === 'add' ? tr('添加标签') : tr('移除标签')}
               />
               {tagBar === 'remove' && (
                 <datalist id="bulk-tags">{tags.map(([t]) => <option value={t} />)}</datalist>
               )}
-              <button type="submit" disabled={!tagInput.trim()}>{tagBar === 'add' ? '添加' : '移除'}</button>
-              <button type="button" class="ghost" onClick={() => { setTagBar(null); setTagInput(''); }}>取消</button>
+              <button type="submit" disabled={!tagInput.trim()}>{tagBar === 'add' ? tr('添加') : tr('移除')}</button>
+              <button type="button" class="ghost" onClick={() => { setTagBar(null); setTagInput(''); }}>{tr('取消')}</button>
             </form>
           ) : inTrash ? (
             <>
-              <button class="ghost" disabled={ids.length === 0} onClick={() => void restorePapers(ids)}>恢复</button>
-              <button class="danger-text" disabled={ids.length === 0} onClick={() => void purge(ids)}>永久清除</button>
+              <button class="ghost" disabled={ids.length === 0} onClick={() => void restorePapers(ids)}>{tr('恢复')}</button>
+              <button class="danger-text" disabled={ids.length === 0} onClick={() => void purge(ids)}>{tr('永久清除')}</button>
             </>
           ) : (
             <>
-              <button class="ghost" disabled={ids.length === 0} onClick={() => setTagBar('add')}>添加标签</button>
-              <button class="ghost" disabled={ids.length === 0} onClick={() => setTagBar('remove')}>移除标签</button>
-              <button class="danger-text" disabled={ids.length === 0} onClick={() => void trashPapers(ids)}>移入回收站</button>
+              <button class="ghost" disabled={ids.length === 0} onClick={() => setTagBar('add')}>{tr('添加标签')}</button>
+              <button class="ghost" disabled={ids.length === 0} onClick={() => setTagBar('remove')}>{tr('移除标签')}</button>
+              <button class="danger-text" disabled={ids.length === 0} onClick={() => void trashPapers(ids)}>{tr('移入回收站')}</button>
             </>
           )}
           <span class="grow" />
-          <button class="ghost" onClick={() => { setSelecting(false); setPicked(new Set()); setTagBar(null); }}>完成</button>
+          <button class="ghost" onClick={() => { setSelecting(false); setPicked(new Set()); setTagBar(null); }}>{tr('完成')}</button>
         </div>
       )}
     </div>
@@ -368,22 +369,22 @@ function AddPopover({ busy, error, onSubmit, onLocal, onClose }: {
     return () => document.removeEventListener('mousedown', onDown);
   }, [onClose]);
   return (
-    <div class="add-pop" ref={ref} role="dialog" aria-label="添加论文">
+    <div class="add-pop" ref={ref} role="dialog" aria-label={tr('添加论文')}>
       <form onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSubmit(value); }}>
         <input
           value={value}
           onInput={(e) => setValue((e.target as HTMLInputElement).value)}
-          placeholder="粘贴链接，或输入 arXiv 编号"
+          placeholder={tr('粘贴链接，或输入 arXiv 编号')}
           spellcheck={false}
           autoComplete="off"
           autoFocus
-          aria-label="论文链接或 arXiv 编号"
+          aria-label={tr('论文链接或 arXiv 编号')}
         />
-        <button type="submit" disabled={busy || !value.trim()}>{busy ? '添加中' : '添加'}</button>
+        <button type="submit" disabled={busy || !value.trim()}>{busy ? tr('添加中') : tr('添加')}</button>
       </form>
       <label class="add-local">
         <Icon name="library" size={14} />
-        <span>打开本机 PDF</span>
+        <span>{tr('打开本机 PDF')}</span>
         <input type="file" accept="application/pdf,.pdf" hidden onChange={(e) => {
           const f = (e.target as HTMLInputElement).files?.[0];
           if (f) onLocal(f);
@@ -408,10 +409,10 @@ function TagEditRow({ name, count, onRename, onDelete }: { name: string; count: 
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
           if (e.key === 'Escape') setV(name);
         }}
-        aria-label={`重命名标签 ${name}`}
+        aria-label={tr('重命名标签 {name}', { name })}
       />
       <span class="nav-count">{count}</span>
-      <button class="icon-btn tiny" onClick={onDelete} title="删除标签" aria-label={`删除标签 ${name}`}>
+      <button class="icon-btn tiny" onClick={onDelete} title={tr('删除标签')} aria-label={tr('删除标签 {name}', { name })}>
         <Icon name="close" size={11} />
       </button>
     </div>
@@ -446,8 +447,8 @@ function PaperRow({ paper: p, trash, selecting, picked, onPick, onTrash, onResto
       {p.authors && <div class="row-authors">{p.authors.length > 120 ? `${p.authors.slice(0, 120)}…` : p.authors}</div>}
       <div class="row-meta">
         {p.version && <span>{p.version}</span>}
-        <span>{notes} 条笔记</span>
-        {p.progress.pages > 0 && <span class="read-pages">{p.progress.page} / {p.progress.pages} 页</span>}
+        <span>{tr('{n} 条笔记', { n: notes })}</span>
+        {p.progress.pages > 0 && <span class="read-pages">{tr('{page} / {pages} 页', { page: p.progress.page, pages: p.progress.pages })}</span>}
         {p.tags.map((t) => <span class="tag">{t}</span>)}
       </div>
     </>
@@ -464,18 +465,18 @@ function PaperRow({ paper: p, trash, selecting, picked, onPick, onTrash, onResto
   }
   return (
     <li class="paper-row">
-      <span class="gutter" title={pct ? `已读 ${pct}%` : '未读'}>
+      <span class="gutter" title={pct ? tr('已读 {pct}%', { pct }) : tr('未读')}>
         <Ring pct={pct} />
       </span>
       {trash ? <div class="row-main">{body}</div> : <a class="row-main" href={paperHash(p.id)}>{body}</a>}
       <div class="row-actions">
         {trash ? (
           <>
-            <button class="ghost small" onClick={onRestore}>恢复</button>
-            <button class="ghost small danger" onClick={onPurge}>永久清除</button>
+            <button class="ghost small" onClick={onRestore}>{tr('恢复')}</button>
+            <button class="ghost small danger" onClick={onPurge}>{tr('永久清除')}</button>
           </>
         ) : (
-          <button class="icon-btn tiny" onClick={onTrash} title="移入回收站" aria-label="移入回收站"><Icon name="trash" size={13} /></button>
+          <button class="icon-btn tiny" onClick={onTrash} title={tr('移入回收站')} aria-label={tr('移入回收站')}><Icon name="trash" size={13} /></button>
         )}
       </div>
     </li>

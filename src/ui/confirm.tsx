@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import { useEffect, useState } from 'preact/hooks';
 
 export interface ConfirmOptions {
@@ -60,9 +61,9 @@ export function ConfirmHost() {
         <h2 id="confirm-title">{c.title}</h2>
         {c.message && <p class="muted">{c.message}</p>}
         <div class="confirm-actions">
-          <button class="ghost" autoFocus={c.danger} onClick={() => settle(false)}>取消</button>
+          <button class="ghost" autoFocus={c.danger} onClick={() => settle(false)}>{tr('取消')}</button>
           <button class={c.danger ? 'destructive' : ''} autoFocus={!c.danger} onClick={() => settle(true)}>
-            {c.confirmLabel ?? (c.danger ? '删除' : '确定')}
+            {c.confirmLabel ?? (c.danger ? tr('删除') : tr('确定'))}
           </button>
         </div>
       </div>

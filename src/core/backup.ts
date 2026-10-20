@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import { parseDoc } from './model';
 import type { PaperStore } from './store';
 import type { PaperDoc } from './types';
@@ -29,10 +30,10 @@ export async function importBackup(store: PaperStore, text: string): Promise<num
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new Error('备份文件不是合法的 JSON');
+    throw new Error(tr('备份文件不是合法的 JSON'));
   }
   const o = raw as Partial<BackupFile> | null;
-  if (!o || o.format !== BACKUP_FORMAT || !Array.isArray(o.papers)) throw new Error('这不是本应用导出的备份文件');
+  if (!o || o.format !== BACKUP_FORMAT || !Array.isArray(o.papers)) throw new Error(tr('这不是本应用导出的备份文件'));
   let n = 0;
   for (const p of o.papers) {
     const doc = parseDoc(JSON.stringify(p));

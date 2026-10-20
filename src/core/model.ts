@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import { INK_KEYS } from './types';
 import type { InkShape, Shape, TextShape } from './types';
 import {
@@ -189,14 +190,14 @@ export function parseDoc(text: string): PaperDoc {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new Error('笔记文件不是合法的 JSON');
+    throw new Error(tr('笔记文件不是合法的 JSON'));
   }
-  if (!raw || typeof raw !== 'object') throw new Error('笔记文件格式错误');
+  if (!raw || typeof raw !== 'object') throw new Error(tr('笔记文件格式错误'));
   const o = raw as Record<string, unknown>;
   const id = str(o.id);
-  if (!id) throw new Error('笔记文件缺少 id');
+  if (!id) throw new Error(tr('笔记文件缺少 id'));
   const schema = num(o.schema, 1);
-  if (schema > SCHEMA_VERSION) throw new Error(`笔记文件来自更新版本的应用（schema ${schema}），请先更新应用`);
+  if (schema > SCHEMA_VERSION) throw new Error(tr('笔记文件来自更新版本的应用（schema {schema}），请先更新应用', { schema }));
 
   const ft = (o.fieldTimes && typeof o.fieldTimes === 'object' ? o.fieldTimes : {}) as Record<string, unknown>;
   const fieldTimes = Object.fromEntries(FIELD_NAMES.map((f) => [f, num(ft[f])])) as Record<FieldName, number>;

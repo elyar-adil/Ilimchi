@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import type { Idb } from './idb';
 
 /**
@@ -65,8 +66,16 @@ async function encrypt(key: CryptoKey, secret: VaultSecret): Promise<{ iv: Uint8
 async function decrypt(key: CryptoKey, iv: Uint8Array, ct: ArrayBuffer): Promise<VaultSecret> {
   const pt = await subtle().decrypt({ name: 'AES-GCM', iv: iv as BufferSource, additionalData: AAD as BufferSource }, key, ct);
   const parsed = JSON.parse(new TextDecoder().decode(pt)) as VaultSecret;
-  if (typeof parsed.token !== 'string') throw new Error('保险库内容损坏');
+  if (typeof parsed.token !== 'string') throw new Error(tr('保险库内容损坏'));
   return parsed;
+}
+
+/** 口令模式下未提供口令（需要用户输入）。 */
+export class PassphraseRequiredError extends Error {
+  constructor() {
+    super(tr('需要口令'));
+    this.name = 'PassphraseRequiredError';
+  }
 }
 
 export class Vault {
@@ -82,7 +91,7 @@ export class Vault {
 
   async save(secret: VaultSecret, mode: VaultMode, passphrase?: string): Promise<void> {
     if (mode === 'passphrase') {
-      if (!passphrase || passphrase.length < 8) throw new Error('口令至少 8 个字符');
+      if (!passphrase || passphrase.length < 8) throw new Error(tr('口令至少 8 个字符'));
       const salt = crypto.getRandomValues(new Uint8Array(16));
       const key = await deriveKey(passphrase, salt, this.iterations);
       const { iv, ct } = await encrypt(key, secret);
@@ -102,12 +111,12 @@ export class Vault {
     if (!rec) return null;
     try {
       if (rec.mode === 'device') return await decrypt(rec.key, rec.iv, rec.ct);
-      if (!passphrase) throw new Error('需要口令');
+      if (!passphrase) throw new PassphraseRequiredError();
       const key = await deriveKey(passphrase, rec.salt, rec.iterations);
       return await decrypt(key, rec.iv, rec.ct);
     } catch (e) {
-      if (e instanceof Error && e.message === '需要口令') throw e;
-      throw new Error(rec.mode === 'passphrase' ? '口令错误' : '无法解密已保存的令牌，请重新登录');
+      if (e instanceof PassphraseRequiredError) throw e;
+      throw new Error(rec.mode === 'passphrase' ? tr('口令错误') : tr('无法解密已保存的令牌，请重新登录'));
     }
   }
 

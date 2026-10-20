@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import { GitHubError, type Remote } from './github';
 import { idFromPath, paperPath } from './ids';
 import type { Idb } from './idb';
@@ -126,7 +127,7 @@ export class PaperStore {
 
   async mutate(id: string, fn: (d: PaperDoc) => PaperDoc, opts: { lowPriority?: boolean } = {}): Promise<PaperDoc> {
     const cur = this.docs.get(id);
-    if (!cur) throw new Error(`论文不存在: ${id}`);
+    if (!cur) throw new Error(tr('论文不存在: {id}', { id }));
     const next = fn(cur);
     if (next === cur) return cur;
     this.docs.set(id, next);
@@ -277,7 +278,7 @@ export class PaperStore {
     });
     this.refreshPending();
     this.emit();
-    if (unparsable > 0) throw new Error(`有 ${unparsable} 个笔记文件无法解析，已跳过（请检查仓库中 papers/ 下的文件）`);
+    if (unparsable > 0) throw new Error(tr('有 {n} 个笔记文件无法解析，已跳过（请检查仓库中 papers/ 下的文件）', { n: unparsable }));
   }
 
   private async pushAll(): Promise<void> {

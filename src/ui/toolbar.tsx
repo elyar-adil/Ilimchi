@@ -1,3 +1,4 @@
+import { tr } from '../core/i18n';
 import type { ComponentChildren } from 'preact';
 import { Icon, type IconName } from './icons';
 import { INK_HEX, type InkColor } from '../core/types';
@@ -5,11 +6,11 @@ import { INK_HEX, type InkColor } from '../core/types';
 export type Tool = 'select' | 'text' | 'pen' | 'marker' | 'eraser';
 
 const TOOLS: { id: Tool; icon: IconName; label: string }[] = [
-  { id: 'select', icon: 'select', label: '选择' },
-  { id: 'text', icon: 'text', label: '文字' },
-  { id: 'pen', icon: 'pen', label: '画笔' },
-  { id: 'marker', icon: 'marker', label: '荧光笔' },
-  { id: 'eraser', icon: 'eraser', label: '橡皮' },
+  { id: 'select', icon: 'select', label: tr('选择') },
+  { id: 'text', icon: 'text', label: tr('文字') },
+  { id: 'pen', icon: 'pen', label: tr('画笔') },
+  { id: 'marker', icon: 'marker', label: tr('荧光笔') },
+  { id: 'eraser', icon: 'eraser', label: tr('橡皮') },
 ];
 
 interface TopProps {
@@ -31,22 +32,22 @@ interface TopProps {
 export function TopBar(p: TopProps) {
   return (
     <header class="topbar">
-      <button class="icon-btn" onClick={p.onBack} title="返回论文库" aria-label="返回论文库">
+      <button class="icon-btn" onClick={p.onBack} title={tr('返回论文库')} aria-label={tr('返回论文库')}>
         <Icon name="back" />
       </button>
       <div class="topbar-title" title={p.title}>{p.title}</div>
       <div class="grow" />
       {p.pages > 0 && <span class="pager">{p.page} / {p.pages}</span>}
-      <div class="segmented" role="group" aria-label="缩放">
-        <button onClick={p.onZoomOut} title="缩小" aria-label="缩小"><Icon name="minus" size={14} /></button>
-        <button onClick={p.onFit} title="适应宽度" class="seg-label">{p.zoomLabel}</button>
-        <button onClick={p.onZoomIn} title="放大" aria-label="放大"><Icon name="plus" size={14} /></button>
+      <div class="segmented" role="group" aria-label={tr('缩放')}>
+        <button onClick={p.onZoomOut} title={tr('缩小')} aria-label={tr('缩小')}><Icon name="minus" size={14} /></button>
+        <button onClick={p.onFit} title={tr('适应宽度')} class="seg-label">{p.zoomLabel}</button>
+        <button onClick={p.onZoomIn} title={tr('放大')} aria-label={tr('放大')}><Icon name="plus" size={14} /></button>
       </div>
-      <button class={`icon-btn ${p.sidebarOpen ? 'on' : ''}`} onClick={p.onToggleSide} title="笔记" aria-label="显示或隐藏笔记">
+      <button class={`icon-btn ${p.sidebarOpen ? 'on' : ''}`} onClick={p.onToggleSide} title={tr('笔记')} aria-label={tr('显示或隐藏笔记')}>
         <Icon name="sidebar" />
       </button>
       {p.sync}
-      <button class="icon-btn" onClick={p.onOpenSettings} title="设置" aria-label="设置">
+      <button class="icon-btn" onClick={p.onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
         <Icon name="gear" />
       </button>
     </header>
@@ -68,11 +69,11 @@ interface FloatProps {
 /** 底部中间的浮动工具条：只在阅读区域出现。 */
 export function FloatingTools(p: FloatProps) {
   return (
-    <div class="float-tools" role="toolbar" aria-label="标注工具">
-      <button class="float-btn" onClick={p.onUndo} disabled={!p.canUndo} title="撤销 ⌘Z" aria-label="撤销">
+    <div class="float-tools" role="toolbar" aria-label={tr('标注工具')}>
+      <button class="float-btn" onClick={p.onUndo} disabled={!p.canUndo} title={tr('撤销 ⌘Z')} aria-label={tr('撤销')}>
         <Icon name="undo" size={17} />
       </button>
-      <button class="float-btn" onClick={p.onRedo} disabled={!p.canRedo} title="重做 ⇧⌘Z" aria-label="重做">
+      <button class="float-btn" onClick={p.onRedo} disabled={!p.canRedo} title={tr('重做 ⇧⌘Z')} aria-label={tr('重做')}>
         <Icon name="redo" size={17} />
       </button>
       <span class="float-sep" />
@@ -94,7 +95,7 @@ export function FloatingTools(p: FloatProps) {
             <button
               class={`ink-dot ${p.color === c ? 'on' : ''}`}
               style={{ background: INK_HEX[c] }}
-              aria-label={`颜色 ${c}`}
+              aria-label={tr('颜色 {c}', { c })}
               aria-pressed={p.color === c}
               onClick={() => p.onColor(c)}
             />

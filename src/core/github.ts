@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 /**
  * 极简 GitHub REST 客户端，只用 Contents / Git Trees API。
  * api.github.com 允许浏览器跨域直连（Access-Control-Allow-Origin: *），因此无需任何后端。
@@ -103,7 +104,7 @@ export class GitHubClient implements Remote {
           await sleep(300 * 2 ** attempt);
           continue;
         }
-        throw new GitHubError('无法连接 GitHub（网络错误）', 'network');
+        throw new GitHubError(tr('无法连接 GitHub（网络错误）'), 'network');
       }
       if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
         await sleep(400 * 2 ** attempt);
@@ -111,7 +112,7 @@ export class GitHubClient implements Remote {
       }
       return res;
     }
-    throw new GitHubError(`请求失败: ${String(lastErr)}`, 'network');
+    throw new GitHubError(tr('请求失败: {err}', { err: String(lastErr) }), 'network');
   }
 
   private async fail(res: Response, context: string): Promise<never> {
@@ -127,13 +128,13 @@ export class GitHubClient implements Remote {
     const reset = Number(res.headers.get('x-ratelimit-reset'));
     const msg = `${context}: ${res.status}${detail ? ` ${detail}` : ''}`;
 
-    if (res.status === 401) throw new GitHubError('GitHub 令牌无效或已过期，请重新登录', 'auth', 401);
+    if (res.status === 401) throw new GitHubError(tr('GitHub 令牌无效或已过期，请重新登录'), 'auth', 401);
     if (res.status === 429 || (res.status === 403 && (remaining === '0' || retryAfter > 0 || /rate limit/i.test(detail)))) {
       const wait = retryAfter > 0 ? retryAfter * 1000 : reset > 0 ? Math.max(0, reset * 1000 - Date.now()) : 60_000;
-      throw new GitHubError('触发 GitHub 速率限制，稍后自动重试', 'rate_limit', res.status, wait);
+      throw new GitHubError(tr('触发 GitHub 速率限制，稍后自动重试'), 'rate_limit', res.status, wait);
     }
-    if (res.status === 403) throw new GitHubError(`${msg}（令牌权限不足：需要该仓库的 Contents 读写权限）`, 'forbidden', 403);
-    if (res.status === 404) throw new GitHubError(`${msg}（仓库或文件不存在，或令牌无权访问该仓库）`, 'not_found', 404);
+    if (res.status === 403) throw new GitHubError(tr('{msg}（令牌权限不足：需要该仓库的 Contents 读写权限）', { msg }), 'forbidden', 403);
+    if (res.status === 404) throw new GitHubError(tr('{msg}（仓库或文件不存在，或令牌无权访问该仓库）', { msg }), 'not_found', 404);
     if (res.status === 409 || (res.status === 422 && /sha|does not match|is at/i.test(detail))) {
       throw new GitHubError(msg, 'conflict', res.status);
     }
@@ -142,13 +143,13 @@ export class GitHubClient implements Remote {
 
   async getUser(): Promise<{ login: string; id: number }> {
     const res = await this.req('GET', '/user');
-    if (!res.ok) await this.fail(res, '读取用户信息失败');
+    if (!res.ok) await this.fail(res, tr('读取用户信息失败'));
     return (await res.json()) as { login: string; id: number };
   }
 
   async getRepo(): Promise<RepoInfo> {
     const res = await this.req('GET', `/repos/${enc(this.owner)}/${enc(this.repo)}`);
-    if (!res.ok) await this.fail(res, '读取仓库失败');
+    if (!res.ok) await this.fail(res, tr('读取仓库失败'));
     const info = (await res.json()) as RepoInfo;
     this.branch = info.default_branch;
     return info;
@@ -157,7 +158,7 @@ export class GitHubClient implements Remote {
   /** 令牌可访问、且有写权限的仓库（fine-grained 令牌通常只有一个）。 */
   async listWritableRepos(): Promise<RepoInfo[]> {
     const res = await this.req('GET', '/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member');
-    if (!res.ok) await this.fail(res, '列出仓库失败');
+    if (!res.ok) await this.fail(res, tr('列出仓库失败'));
     const repos = (await res.json()) as RepoInfo[];
     return repos.filter((r) => r.permissions?.push);
   }
@@ -167,7 +168,7 @@ export class GitHubClient implements Remote {
     const res = await this.req('GET', `/repos/${enc(this.owner)}/${enc(this.repo)}/git/trees/${enc(this.branch!)}?recursive=1`);
     // 空仓库（尚无任何提交）：409 / 404
     if (res.status === 409 || res.status === 404) return new Map();
-    if (!res.ok) await this.fail(res, '列出笔记文件失败');
+    if (!res.ok) await this.fail(res, tr('列出笔记文件失败'));
     const data = (await res.json()) as { tree: { path: string; type: string; sha: string }[]; truncated?: boolean };
     if (data.truncated) return this.listDirContents();
     const out = new Map<string, string>();
@@ -181,7 +182,7 @@ export class GitHubClient implements Remote {
   private async listDirContents(): Promise<Map<string, string>> {
     const res = await this.req('GET', `/repos/${enc(this.owner)}/${enc(this.repo)}/contents/${this.dir.replace(/\/$/, '')}`);
     if (res.status === 404) return new Map();
-    if (!res.ok) await this.fail(res, '列出笔记目录失败');
+    if (!res.ok) await this.fail(res, tr('列出笔记目录失败'));
     const items = (await res.json()) as { path: string; type: string; sha: string }[];
     return new Map(items.filter((i) => i.type === 'file' && i.path.endsWith('.json')).map((i) => [i.path, i.sha]));
   }
@@ -189,13 +190,13 @@ export class GitHubClient implements Remote {
   async getFile(path: string): Promise<{ content: string; sha: string } | null> {
     const res = await this.req('GET', `/repos/${enc(this.owner)}/${enc(this.repo)}/contents/${encPath(path)}`);
     if (res.status === 404) return null;
-    if (!res.ok) await this.fail(res, `读取 ${path} 失败`);
+    if (!res.ok) await this.fail(res, tr('读取 {path} 失败', { path }));
     const j = (await res.json()) as { sha: string; content?: string; encoding?: string; type?: string };
-    if (j.type && j.type !== 'file') throw new GitHubError(`${path} 不是文件`, 'other');
+    if (j.type && j.type !== 'file') throw new GitHubError(tr('{path} 不是文件', { path }), 'other');
     if (j.content && j.encoding === 'base64') return { content: base64ToUtf8(j.content), sha: j.sha };
     // 超过 1MB 时 contents 接口不返回正文，改走 blobs 接口
     const blob = await this.req('GET', `/repos/${enc(this.owner)}/${enc(this.repo)}/git/blobs/${j.sha}`);
-    if (!blob.ok) await this.fail(blob, `读取 ${path} 内容失败`);
+    if (!blob.ok) await this.fail(blob, tr('读取 {path} 内容失败', { path }));
     const b = (await blob.json()) as { content: string };
     return { content: base64ToUtf8(b.content), sha: j.sha };
   }
@@ -206,7 +207,7 @@ export class GitHubClient implements Remote {
       `/repos/${enc(this.owner)}/${enc(this.repo)}/contents/${encPath(path)}`,
       { message, content: utf8ToBase64(content), ...(sha ? { sha } : {}) },
     );
-    if (!res.ok) await this.fail(res, `写入 ${path} 失败`);
+    if (!res.ok) await this.fail(res, tr('写入 {path} 失败', { path }));
     const j = (await res.json()) as { content: { sha: string } };
     return { sha: j.content.sha };
   }
@@ -214,7 +215,7 @@ export class GitHubClient implements Remote {
   async deleteFile(path: string, sha: string, message: string): Promise<void> {
     const res = await this.req('DELETE', `/repos/${enc(this.owner)}/${enc(this.repo)}/contents/${encPath(path)}`, { message, sha });
     if (res.status === 404) return;
-    if (!res.ok) await this.fail(res, `删除 ${path} 失败`);
+    if (!res.ok) await this.fail(res, tr('删除 {path} 失败', { path }));
   }
 }
 
