@@ -257,7 +257,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
             <span class="set-label">{tr('账户')}</span>
             <div class="set-control">
               <button class="ghost small" onClick={() => onSignOut(false)}>{tr('退出登录')}</button>
-              <button class="ghost small danger" onClick={async () => (await askConfirm({ title: tr('清除本机数据？'), message: tr('会删除本机的缓存、令牌和 PDF 缓存。远端仓库中的笔记不会被删除。'), confirmLabel: tr('清除'), danger: true })) && (await onSignOut(true))}>{tr('清除本机数据')}</button>
+              <button class="ghost small danger" onClick={async () => (await askConfirm({ title: tr('清除本机数据？'), message: tr('会删除本机的缓存、令牌、AI Key 和 PDF 缓存。远端仓库中的笔记不会被删除。'), confirmLabel: tr('清除'), danger: true })) && (await onSignOut(true))}>{tr('清除本机数据')}</button>
             </div>
           </div>
         </section>
