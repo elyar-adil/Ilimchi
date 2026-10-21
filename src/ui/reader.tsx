@@ -26,6 +26,8 @@ import { PdfPage, type DraftText } from './pdfpage';
 import { TopBar, FloatingTools, type Tool } from './toolbar';
 import { Icon } from './icons';
 import { askConfirm } from './confirm';
+import { AiPanel } from './ai-panel';
+import { hasAiKey, subscribeAiConfig } from '../core/ai';
 import 'pdfjs-dist/web/pdf_viewer.css';
 
 const GAP = 16;
@@ -62,6 +64,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const zoomAnchor = useRef<{ ratio: number; y: number } | null>(null);
   const [width, setWidth] = useState(800);
   const [showSide, setShowSide] = useState(() => getPrefs().sidebar);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  const [aiSeed, setAiSeed] = useState<{ id: number; text: string; page: number; mode: 'explain' | 'translate' | 'background' | 'critique' } | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   /** 当前点选、可调整端点的高亮 */
   const [hlSel, setHlSel] = useState<string | null>(null);
@@ -82,6 +87,20 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const restoredRef = useRef(false);
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relocating = useRef(new Set<string>());
+
+  useEffect(() => {
+    let alive = true;
+    const refreshAi = () => {
+      void hasAiKey().then((enabled) => {
+        if (!alive) return;
+        setAiEnabled(enabled);
+        if (!enabled) setShowAi(false);
+      }).catch(() => { if (alive) { setAiEnabled(false); setShowAi(false); } });
+    };
+    const unsubscribe = subscribeAiConfig(refreshAi);
+    refreshAi();
+    return () => { alive = false; unsubscribe(); };
+  }, []);
 
   // 工具切换时清理未完成的操作
   useEffect(() => {
@@ -680,6 +699,12 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           setPrefs({ sidebar: !showSide });
         }}
         onOpenSettings={onOpenSettings}
+        aiEnabled={aiEnabled}
+        aiOpen={showAi}
+        onToggleAi={() => {
+          setShowAi((v) => !v);
+          if (!showAi) setShowSide(false);
+        }}
         sync={<SyncBadge status={status} onSync={() => void store.sync()} />}
       />
 
@@ -773,6 +798,16 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
               ))}
               <span class="sel-sep" />
               <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>{tr('批注')}</button>
+              {aiEnabled && <>
+                <span class="sel-sep" />
+                <button class="ghost small on-dark" onClick={() => {
+                  setAiSeed({ id: Date.now(), text: pending.quote, page: pending.page, mode: 'explain' });
+                  setShowAi(true);
+                  setShowSide(false);
+                  setPending(null);
+                  window.getSelection()?.removeAllRanges();
+                }}>{tr('AI 解释')}</button>
+              </>}
             </div>
           )}
         </div>
@@ -789,7 +824,36 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         />
         </div>
 
-        {showSide && (
+        {showAi && aiEnabled && (
+          <AiPanel
+            title={displayTitle(doc)}
+            seed={aiSeed}
+            getPaperText={async () => {
+              if (!loaded) throw new Error(tr('PDF 尚未加载完成'));
+              const sections: string[] = [];
+              let total = 0;
+              for (let pageNo = 1; pageNo <= loaded.pdf.numPages; pageNo++) {
+                const page = await loaded.pdf.getPage(pageNo);
+                const content = await page.getTextContent();
+                const pageText = content.items.filter((item) => 'str' in item).map((item) => 'str' in item ? String(item.str) : '').join(' ');
+                const section = '[p. ' + pageNo + ']\\n' + pageText + '\\n\\n';
+                if (total + section.length > 50000) {
+                  sections.push(section.slice(0, Math.max(0, 50000 - total)));
+                  break;
+                }
+                sections.push(section);
+                total += section.length;
+              }
+              const text = sections.join('');
+              if (!text.trim() || !/\\S/.test(text.replace(/\\[p\\. \\d+\\]/g, ''))) throw new Error(tr('这份 PDF 没有可提取的文字层，可能是扫描版文件'));
+              return text + (total >= 50000 ? '\\n[Paper text truncated at 50,000 characters.]' : '');
+            }}
+            onJumpToPage={(page) => jumpTo(page, 0, null)}
+            onClose={() => setShowAi(false)}
+          />
+        )}
+
+        {showSide && !showAi && (
           <aside class="side">
             <section class="cite">
               <EditableText cls="cite-title" label={tr('标题')} value={doc.title} placeholder={tr('未识别到标题')} onSave={(v) => setMeta({ title: v })} />
