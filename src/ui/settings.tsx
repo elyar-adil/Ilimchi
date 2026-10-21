@@ -1,5 +1,5 @@
 import { tr } from '../core/i18n';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Session } from '../core/auth';
 import { backupFileName, exportBackup, importBackup } from '../core/backup';
 import { pdfCache } from '../core/services';
@@ -8,6 +8,7 @@ import type { PaperStore } from '../core/store';
 import { useStoreRerender, useSyncStatus } from './nav';
 import { SyncBadge } from './shared';
 import { askConfirm } from './confirm';
+import { clearAiConfig, getAiOptions, hasAiKey, requestAi, saveAiConfig } from '../core/ai';
 
 const THEMES: { id: Theme; label: string }[] = [
   { id: 'system', label: tr('自动') },
@@ -26,6 +27,14 @@ export function Settings({ store, session, onClose, onSignOut }: {
   const [prefs, setLocal] = useState(getPrefs());
   const [proxy, setProxy] = useState(prefs.proxy);
   const [msg, setMsg] = useState<string | null>(null);
+  const [aiOptions, setAiOptions] = useState(getAiOptions());
+  const [aiKey, setAiKey] = useState('');
+  const [aiConfigured, setAiConfigured] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void hasAiKey().then((value) => { if (alive) setAiConfigured(value); }).catch(() => { if (alive) setAiConfigured(false); });
+    return () => { alive = false; };
+  }, []);
   const update = (patch: Partial<ReturnType<typeof getPrefs>>) => {
     setPrefs(patch);
     setLocal(getPrefs());
@@ -37,6 +46,46 @@ export function Settings({ store, session, onClose, onSignOut }: {
     if (v && !v.includes('{url}') && !v.endsWith('=')) return setMsg(tr('代理模板应包含 {url}'));
     update({ proxy: v });
     setMsg(tr('已保存'));
+  };
+
+  const saveAi = async () => {
+    try {
+      await saveAiConfig({ baseUrl: aiOptions.baseUrl, model: aiOptions.model }, aiKey);
+      const enabled = await hasAiKey();
+      setAiConfigured(enabled);
+      setAiOptions(getAiOptions());
+      setAiKey('');
+      setMsg(enabled ? tr('AI 设置已保存，阅读器中的 AI 功能已启用') : tr('设置已保存；填写 API Key 后才会启用 AI 功能'));
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const testAi = async () => {
+    setMsg(tr('正在测试 AI 连接…'));
+    try {
+      const response = await requestAi(
+        'You are testing an API connection. Reply with exactly OK.',
+        'Reply with exactly OK.',
+        { baseUrl: aiOptions.baseUrl, model: aiOptions.model },
+        aiKey.trim() || undefined,
+      );
+      setMsg(tr('AI 连接成功：{response}', { response: response.slice(0, 80) }));
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const removeAi = async () => {
+    try {
+      await clearAiConfig();
+      setAiOptions(getAiOptions());
+      setAiKey('');
+      setAiConfigured(false);
+      setMsg(tr('AI Key 已清除，阅读器已恢复普通模式'));
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const doExport = () => {
@@ -129,6 +178,38 @@ export function Settings({ store, session, onClose, onSignOut }: {
           <p class="set-hint">{tr('间隔内的多次修改合并为一次提交。切换标签页或关闭页面时会立即保存；“仅手动”模式下，离开页面时仍会保存一次。')}</p>
           {status.error && <p class="set-hint error">{status.error}</p>}
           <a class="set-link" href={`https://github.com/${session.config.owner}/${session.config.repo}/commits`} target="_blank" rel="noreferrer noopener">{tr('查看历史提交')}</a>
+        </section>
+
+        <section class="group">
+          <h3 class="group-title">{tr('AI 阅读助手')}</h3>
+          <div class="set">
+            <label class="set-label" for="ai-api-url">{tr('API 地址')}</label>
+            <div class="set-control">
+              <input id="ai-api-url" value={aiOptions.baseUrl} placeholder="https://api.openai.com/v1" onInput={(e) => setAiOptions((v) => ({ ...v, baseUrl: (e.target as HTMLInputElement).value }))} />
+            </div>
+          </div>
+          <div class="set">
+            <label class="set-label" for="ai-model">{tr('模型名称')}</label>
+            <div class="set-control">
+              <input id="ai-model" value={aiOptions.model} placeholder="gpt-4o-mini" onInput={(e) => setAiOptions((v) => ({ ...v, model: (e.target as HTMLInputElement).value }))} />
+            </div>
+          </div>
+          <div class="set">
+            <label class="set-label" for="ai-api-key">{tr('API Key')}</label>
+            <div class="set-control">
+              <input id="ai-api-key" type="password" autocomplete="new-password" value={aiKey} placeholder={aiConfigured ? tr('已配置；留空表示不更改') : tr('粘贴你的 API Key')} onInput={(e) => setAiKey((e.target as HTMLInputElement).value)} />
+            </div>
+          </div>
+          <div class="set">
+            <span class="set-label" />
+            <div class="set-control">
+              <button class="small" onClick={() => void saveAi()}>{tr('保存')}</button>
+              <button class="ghost small" onClick={() => void testAi()}>{tr('测试连接')}</button>
+              {aiConfigured && <button class="ghost small danger" onClick={() => void removeAi()}>{tr('清除 Key')}</button>}
+            </div>
+          </div>
+          <p class="set-hint">{aiConfigured ? tr('AI 已启用。') : tr('未配置 Key 时，Ilimchi 保持普通 PDF 阅读器模式。')}</p>
+          <p class="set-hint">{tr('Key 只加密保存在本机，不会同步到 GitHub。使用 AI 时，选中的文字或论文文本会发送给你配置的服务商。支持 OpenAI 兼容的 Chat Completions 接口。')}</p>
         </section>
 
         <section class="group">
