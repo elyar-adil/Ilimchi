@@ -25,6 +25,9 @@ interface TopProps {
   sidebarOpen: boolean;
   onToggleSide: () => void;
   onOpenSettings: () => void;
+  aiEnabled: boolean;
+  aiOpen: boolean;
+  onToggleAi: () => void;
   sync: ComponentChildren;
 }
 
@@ -46,6 +49,7 @@ export function TopBar(p: TopProps) {
       <button class={`icon-btn ${p.sidebarOpen ? 'on' : ''}`} onClick={p.onToggleSide} title={tr('笔记')} aria-label={tr('显示或隐藏笔记')}>
         <Icon name="sidebar" />
       </button>
+      {p.aiEnabled && <button class={`icon-btn ${p.aiOpen ? 'on' : ''}`} onClick={p.onToggleAi} title={tr('AI 阅读助手')} aria-label={tr('AI 阅读助手')}>AI</button>}
       {p.sync}
       <button class="icon-btn" onClick={p.onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
         <Icon name="gear" />
