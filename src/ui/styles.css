@@ -929,3 +929,30 @@ button.link:hover:not(:disabled) { text-decoration: underline; filter: none; }
   .bulk-bar { left: 50%; right: auto; max-width: calc(100vw - 32px); }
   .bulk-bar .grow { display: none; }
 }
+
+
+/* ---------- Optional AI reading assistant ---------- */
+.ai-side { width: 352px; max-height: none; min-height: 0; padding: 0; gap: 0; overflow: hidden; }
+.ai-panel-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 16px; box-shadow: inset 0 -1px 0 var(--rule); }
+.ai-panel-head > div { flex: 1; min-width: 0; }
+.ai-panel-head strong { display: block; font-size: 14px; line-height: 20px; }
+.ai-panel-head p { color: var(--ink-3); font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+.ai-panel-body { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 28px; }
+.ai-panel-body > .set-hint { margin: 0; }
+.ai-source { border: 1px solid var(--rule); border-radius: 6px; padding: 10px; background: var(--wash); }
+.ai-source-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--ink-3); font-size: 11px; }
+.ai-source blockquote { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--serif); font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.ai-modes { display: flex; flex-wrap: wrap; gap: 4px; }
+.ai-privacy { color: var(--ink-3); font-size: 11px; line-height: 16px; }
+.ai-question-label { font-size: 12px; color: var(--ink-2); }
+.ai-question { width: 100%; min-height: 76px; resize: vertical; }
+.ai-ask { align-self: flex-end; }
+.ai-status { color: var(--ink-3); font-size: 12px; }
+.ai-error { color: var(--red-pencil); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 17px; }
+.ai-answer { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }
+.ai-citation { display: inline; height: auto; line-height: inherit; padding: 0 3px; border-radius: 3px; vertical-align: baseline; font-size: 11px; background: var(--pencil-wash); color: var(--pencil); }
+.ai-citation:hover:not(:disabled) { filter: none; background: var(--pencil-line); }
+
+@media (max-width: 760px) {
+  .ai-side { width: 100%; flex: none; height: min(44vh, 360px); max-height: none; padding: 0; }
+}
