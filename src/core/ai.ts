@@ -66,7 +66,7 @@ async function encryptKey(apiKey: string): Promise<SecretRecord> {
   const key = await cryptoApi.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   const iv = cryptoApi.getRandomValues(new Uint8Array(12));
   const ciphertext = await cryptoApi.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: AAD },
+    { name: 'AES-GCM', iv: iv as BufferSource, additionalData: AAD as BufferSource },
     key,
     new TextEncoder().encode(apiKey),
   );
@@ -82,7 +82,7 @@ async function loadAiKey(): Promise<string | null> {
   if (!record) return null;
   try {
     const plaintext = await globalThis.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: record.iv, additionalData: AAD },
+      { name: 'AES-GCM', iv: record.iv as BufferSource, additionalData: AAD as BufferSource },
       record.key,
       record.ciphertext,
     );
@@ -169,7 +169,7 @@ export async function requestAi(
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content === 'string' && content.trim()) return content.trim();
   if (Array.isArray(content)) {
-    const text = content.map((part) => {
+    const text = content.map((part: unknown) => {
       if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') return part.text;
       return '';
     }).join('').trim();
