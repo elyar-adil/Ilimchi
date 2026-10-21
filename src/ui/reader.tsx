@@ -832,21 +832,25 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
               if (!loaded) throw new Error(tr('PDF 尚未加载完成'));
               const sections: string[] = [];
               let total = 0;
+              let extractedChars = 0;
+              let truncated = false;
               for (let pageNo = 1; pageNo <= loaded.pdf.numPages; pageNo++) {
                 const page = await loaded.pdf.getPage(pageNo);
                 const content = await page.getTextContent();
                 const pageText = content.items.filter((item) => 'str' in item).map((item) => 'str' in item ? String(item.str) : '').join(' ');
-                const section = '[p. ' + pageNo + ']\\n' + pageText + '\\n\\n';
+                extractedChars += pageText.trim().length;
+                const section = '[p. ' + pageNo + ']\n' + pageText + '\n\n';
                 if (total + section.length > 50000) {
                   sections.push(section.slice(0, Math.max(0, 50000 - total)));
+                  truncated = true;
                   break;
                 }
                 sections.push(section);
                 total += section.length;
               }
               const text = sections.join('');
-              if (!text.trim() || !/\\S/.test(text.replace(/\\[p\\. \\d+\\]/g, ''))) throw new Error(tr('这份 PDF 没有可提取的文字层，可能是扫描版文件'));
-              return text + (total >= 50000 ? '\\n[Paper text truncated at 50,000 characters.]' : '');
+              if (extractedChars === 0) throw new Error(tr('这份 PDF 没有可提取的文字层，可能是扫描版文件'));
+              return text + (truncated ? '\n[Paper text truncated at 50,000 characters.]' : '');
             }}
             onJumpToPage={(page) => jumpTo(page, 0, null)}
             onClose={() => setShowAi(false)}
