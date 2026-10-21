@@ -2,6 +2,7 @@ import { tr } from './i18n';
 import { GitHubClient, GitHubError, type RepoInfo } from './github';
 import type { Idb } from './idb';
 import { Vault, type VaultMode } from './vault';
+import { clearAiConfig } from './ai';
 
 /**
  * 授权：纯前端、无后端。
@@ -172,6 +173,7 @@ export async function signOut(vault: Vault, idb: Idb, clearLocalData: boolean): 
   await vault.clear();
   clearConfig();
   if (clearLocalData) {
+    await clearAiConfig().catch(() => {});
     await Promise.all((['papers', 'sync', 'pdfs', 'pdfmeta'] as const).map((s) => idb.clear(s)));
   }
 }
