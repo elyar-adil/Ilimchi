@@ -695,6 +695,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         onFit={() => zoomCenter(1)}
         sidebarOpen={showSide}
         onToggleSide={() => {
+          setShowAi(false);
+          setAiSeed(null);
           setShowSide((s) => !s);
           setPrefs({ sidebar: !showSide });
         }}
@@ -702,8 +704,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         aiEnabled={aiEnabled}
         aiOpen={showAi}
         onToggleAi={() => {
-          setShowAi((v) => !v);
           if (!showAi) setShowSide(false);
+          setAiSeed(null);
+          setShowAi((v) => !v);
         }}
         sync={<SyncBadge status={status} onSync={() => void store.sync()} />}
       />
@@ -853,7 +856,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
               return text + (truncated ? '\n[Paper text truncated at 50,000 characters.]' : '');
             }}
             onJumpToPage={(page) => jumpTo(page, 0, null)}
-            onClose={() => setShowAi(false)}
+            onClose={() => { setShowAi(false); setAiSeed(null); }}
           />
         )}
 
