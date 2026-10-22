@@ -834,6 +834,31 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     }, 0);
   };
 
+  const copySelectedText = async () => {
+    if (!pending) return;
+    try {
+      await navigator.clipboard.writeText(pending.quote);
+    } catch {
+      const fallback = document.createElement('textarea');
+      fallback.value = pending.quote;
+      fallback.setAttribute('readonly', '');
+      fallback.style.position = 'fixed';
+      fallback.style.opacity = '0';
+      fallback.style.pointerEvents = 'none';
+      document.body.appendChild(fallback);
+      fallback.select();
+      const copied = document.execCommand('copy');
+      fallback.remove();
+      if (!copied) {
+        alert(tr('复制失败，请检查浏览器剪贴板权限'));
+        return;
+      }
+    }
+    setPending(null);
+    writeTouchSelection(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
   const createHighlight = async (color: HighlightColor, withNote: boolean) => {
     if (!pending || load.kind !== 'ready') return;
     const ann: Annotation = {
@@ -1084,6 +1109,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
               {HIGHLIGHT_COLORS.map((c) => (
                 <button class={`swatch ${c}`} title={colorName(c)} aria-label={tr('{color}高亮', { color: colorName(c) })} onClick={() => createHighlight(c, false)} />
               ))}
+              <span class="sel-sep" />
+              <button class="ghost small on-dark" onClick={copySelectedText}>{tr('复制')}</button>
               <span class="sel-sep" />
               <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>{tr('批注')}</button>
             </div>
