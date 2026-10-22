@@ -610,6 +610,57 @@ a.row-main:hover .row-title { color: var(--pencil); }
 .reader[data-tool="eraser"] .textLayer,
 .reader[data-tool="text"] .textLayer { pointer-events: none; }
 
+/* Touch selection is implemented by Ilimchi, not the browser's native copy/callout menu. */
+.reader[data-touch-select="true"] .textLayer,
+.reader[data-touch-select="true"] .textLayer * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none;
+}
+.reader[data-touch-select="true"] .textLayer { -webkit-touch-callout: none; }
+
+.touch-selection-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touch-selection-rect {
+  position: absolute;
+  border-radius: 2px;
+  background: rgba(47, 111, 159, 0.28);
+  pointer-events: none;
+}
+.touch-selection-handle {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+.touch-selection-handle::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pencil);
+  box-shadow: 0 1px 3px rgba(20, 24, 28, 0.28), 0 0 0 2px var(--paper);
+}
+.touch-selection-handle:hover { filter: none; background: transparent; }
+
 .ink-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .reader[data-tool="eraser"] .ink-layer polyline.hit { pointer-events: stroke; cursor: pointer; }
 .reader[data-tool="eraser"] .ink-layer polyline.hit:hover { stroke: var(--red-pencil); stroke-opacity: 0.25; }

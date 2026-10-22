@@ -61,6 +61,8 @@ interface Props {
   penColor: InkColor;
   markerColor: InkColor;
   draft: DraftText | null;
+  touchSelection: { page: number; start: number; end: number; rects: Rect[] } | null;
+  showTouchSelectionHandles: boolean;
   onRendered: (page: number, pageEl: HTMLElement, layer: HTMLElement) => void;
   onAddInk: (page: number, points: [number, number][], marker: boolean) => void;
   onStartText: (page: number, x: number, y: number) => void;
@@ -291,6 +293,36 @@ export function PdfPage(props: Props) {
         )}
       </div>
       <div class="textLayer" ref={layerRef} />
+      {props.touchSelection?.page === num && props.touchSelection.rects.length > 0 && (() => {
+        const rects = props.touchSelection.rects;
+        const first = rects[0];
+        const last = rects[rects.length - 1];
+        return (
+          <div class="touch-selection-layer" aria-hidden="true">
+            {rects.map((r, i) => (
+              <div
+                key={i}
+                class="touch-selection-rect"
+                style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}
+              />
+            ))}
+            {props.showTouchSelectionHandles && (
+              <>
+                <div
+                  class="touch-selection-handle start"
+                  data-touch-selection-handle="start"
+                  style={{ left: `${first.x * 100}%`, top: `${(first.y + first.h) * 100}%` }}
+                />
+                <div
+                  class="touch-selection-handle end"
+                  data-touch-selection-handle="end"
+                  style={{ left: `${(last.x + last.w) * 100}%`, top: `${(last.y + last.h) * 100}%` }}
+                />
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       <svg class="ink-layer" viewBox={`0 0 1000 ${1000 * pageSize}`} preserveAspectRatio="none" aria-hidden="true">
         {inks.flatMap((s) => {

@@ -6,17 +6,17 @@ import {
   addAnnotation, addShape, liveAnnotations, liveShapes, newId, removeAnnotation, removeShape,
   setField, setProgress, updateAnnotation, updateShape, displayTitle,
 } from '../core/model';
-import { locateQuote } from '../core/anchor';
+import { contextOf, locateQuote } from '../core/anchor';
 import { loadPdf, importLocalPdf, PdfLoadError } from '../core/pdfsource';
 import { cacheKey } from '../core/pdfcache';
 import { pdfCache } from '../core/services';
 import { getPrefs, setPrefs, subscribePrefs } from '../core/prefs';
 import { guessMeta, type TextItem } from '../core/titleguess';
 import type { PaperStore } from '../core/store';
-import type { Annotation, HighlightColor, InkColor, InkShape, PaperDoc, Shape, TextShape } from '../core/types';
+import type { Annotation, HighlightColor, InkColor, InkShape, PaperDoc, Rect, Shape, TextShape } from '../core/types';
 import { HIGHLIGHT_COLORS, MARKER_COLORS, PEN_COLORS } from '../core/types';
 import { openPdf, type PDFDoc } from '../pdf/engine';
-import { rawText, rectsForOffsets, selectionToPending, type PendingSelection } from '../pdf/text';
+import { rawOffsetAtPoint, rawText, readableSlice, rectsForOffsets, selectionToPending, type PendingSelection } from '../pdf/text';
 import { navigate, useStoreRerender } from './nav';
 import { restoreSnapshot, snapshotOf, type Snapshot } from '../core/undo';
 import { sourceLabel } from './shared';
@@ -45,6 +45,84 @@ type LoadState =
   | { kind: 'ready'; loaded: Loaded }
   | { kind: 'error'; message: string; code?: string };
 
+interface TouchTextSelection {
+  page: number;
+  layer: HTMLElement;
+  pageEl: HTMLElement;
+  start: number;
+  end: number;
+  rects: Rect[];
+}
+
+interface TouchPointerCandidate {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  layer: HTMLElement;
+  pageEl: HTMLElement;
+  page: number;
+  mode: 'pending' | 'selecting' | 'adjusting' | 'panning';
+  start: number;
+  end: number;
+  edge?: 'start' | 'end';
+  timer?: number;
+  handleEl?: HTMLElement;
+}
+
+/** Long-press selects a word without invoking the browser's native text selection UI. */
+function wordRangeAt(text: string, offset: number): { start: number; end: number } {
+  if (!text.length) return { start: 0, end: 0 };
+  const at = Math.max(0, Math.min(text.length - 1, offset));
+  const char = text[at];
+  // CJK scripts are not space-delimited; select a single character as a predictable starting point.
+  if (/[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/.test(char)) {
+    return { start: at, end: at + 1 };
+  }
+  const word = /[\p{L}\p{N}_]/u;
+  if (!word.test(char)) return { start: at, end: at + 1 };
+  let start = at;
+  let end = at + 1;
+  while (start > 0 && word.test(text[start - 1])) start--;
+  while (end < text.length && word.test(text[end])) end++;
+  return { start, end };
+}
+
+function makeTouchSelection(layer: HTMLElement, pageEl: HTMLElement, page: number, a: number, b: number): TouchTextSelection | null {
+  const length = rawText(layer).length;
+  const start = Math.max(0, Math.min(length, Math.min(a, b)));
+  const end = Math.max(0, Math.min(length, Math.max(a, b)));
+  if (end <= start) return null;
+  const rects = rectsForOffsets(layer, pageEl, start, end);
+  return rects.length ? { page, layer, pageEl, start, end, rects } : null;
+}
+
+/** Convert the app-owned touch range to the same data shape used by desktop selection. */
+function touchSelectionToPending(selection: TouchTextSelection, viewer: HTMLElement): PendingSelection | null {
+  const raw = rawText(selection.layer);
+  const quote = readableSlice(selection.layer, selection.start, selection.end);
+  if (!quote) return null;
+  const context = contextOf(raw, selection.start, selection.end);
+  const rects = selection.rects;
+  const pageBox = selection.pageEl.getBoundingClientRect();
+  const viewerBox = viewer.getBoundingClientRect();
+  const top = Math.min(...rects.map((r) => r.y)) * pageBox.height + pageBox.top;
+  const last = rects[rects.length - 1];
+  const left = (last.x + last.w / 2) * pageBox.width + pageBox.left;
+  return {
+    page: selection.page,
+    pageEl: selection.pageEl,
+    layer: selection.layer,
+    start: selection.start,
+    end: selection.end,
+    quote,
+    prefix: context.prefix,
+    suffix: context.suffix,
+    rects,
+    anchorTop: Math.max(0, top - viewerBox.top + viewer.scrollTop),
+    anchorLeft: left - viewerBox.left + viewer.scrollLeft,
+  };
+}
+
 export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; paperId: string; onOpenSettings: () => void }) {
   useStoreRerender(store);
   const doc = store.get(paperId) as PaperDoc;
@@ -65,6 +143,15 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   /** 当前点选、可调整端点的高亮 */
   const [hlSel, setHlSel] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingSelection | null>(null);
+  const [touchSelection, setTouchSelection] = useState<TouchTextSelection | null>(null);
+  const touchSelectionRef = useRef<TouchTextSelection | null>(null);
+  touchSelectionRef.current = touchSelection;
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const writeTouchSelection = (next: TouchTextSelection | null) => {
+    touchSelectionRef.current = next;
+    setTouchSelection(next);
+  };
   const [unanchored, setUnanchored] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [newVersion, setNewVersion] = useState<string | null>(null);
@@ -128,6 +215,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   useEffect(() => {
     setDraft(null);
     setPending(null);
+    writeTouchSelection(null);
   }, [tool]);
 
   /** 记录修改前的快照后再写入；新的修改会清空重做栈。 */
@@ -385,6 +473,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     const el = scrollRef.current;
     if (!el) return;
     const touches = new Map<number, { x: number; y: number }>();
+    const candidates = new Map<number, TouchPointerCandidate>();
     let lastPenAt = 0;
     let pinch: { dist: number; zoom: number } | null = null;
     let samples: { t: number; x: number; y: number }[] = [];
@@ -444,16 +533,123 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       return Math.hypot(a.x - b.x, a.y - b.y) || 1;
     };
 
+    const selectionOffsetAt = (c: TouchPointerCandidate, x: number, y: number): number | null => {
+      const direct = rawOffsetAtPoint(c.layer, x, y);
+      if (direct !== null) return direct;
+      const box = c.pageEl.getBoundingClientRect();
+      const px = Math.max(box.left + 2, Math.min(box.right - 2, x));
+      const py = Math.max(box.top + 2, Math.min(box.bottom - 2, y));
+      return rawOffsetAtPoint(c.layer, px, py);
+    };
+
+    const beginPanFromCandidate = (c: TouchPointerCandidate) => {
+      if (c.timer !== undefined) window.clearTimeout(c.timer);
+      c.timer = undefined;
+      if (c.handleEl) c.handleEl.style.pointerEvents = '';
+      c.mode = 'panning';
+      touches.set(c.pointerId, { x: c.startX, y: c.startY });
+      samples = [{ t: performance.now(), x: c.startX, y: c.startY }];
+    };
+
     const onDown = (e: PointerEvent) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const root = el.closest('.reader') as HTMLElement | null;
       if (e.pointerType === 'pen') {
         lastPenAt = performance.now();
         stopInertia();
+        if (root) root.dataset.touchSelect = 'false';
+        if (target?.closest('.textLayer')) {
+          setPending(null);
+          writeTouchSelection(null);
+        }
         return;
       }
-      if (e.pointerType !== 'touch') return;
+      if (e.pointerType !== 'touch') {
+        if (e.pointerType === 'mouse') {
+          if (root) root.dataset.touchSelect = 'false';
+          if (target?.closest('.textLayer')) {
+            setPending(null);
+            writeTouchSelection(null);
+          }
+        }
+        return;
+      }
       if (performance.now() - lastPenAt < PEN_GRACE_MS) return;
       if (e.width > PALM_PX || e.height > PALM_PX) return;
       stopInertia();
+
+      const handle = target?.closest('[data-touch-selection-handle]') as HTMLElement | null;
+      const existing = touchSelectionRef.current;
+      if (handle && existing && toolRef.current === 'select' && touches.size === 0 && candidates.size === 0) {
+        if (root) root.dataset.touchSelect = 'true';
+        const edge = handle.dataset.touchSelectionHandle === 'start' ? 'start' : 'end';
+        const candidate: TouchPointerCandidate = {
+          pointerId: e.pointerId,
+          startX: e.clientX,
+          startY: e.clientY,
+          layer: existing.layer,
+          pageEl: existing.pageEl,
+          page: existing.page,
+          mode: 'adjusting',
+          start: existing.start,
+          end: existing.end,
+          edge,
+          handleEl: handle,
+        };
+        // Let caretPositionFromPoint see the text underneath the handle while the finger drags.
+        handle.style.pointerEvents = 'none';
+        candidates.set(e.pointerId, candidate);
+        try { el.setPointerCapture(e.pointerId); } catch { /* implicit touch capture is sufficient */ }
+        e.preventDefault();
+        return;
+      }
+
+      const layer = target?.closest('.textLayer') as HTMLElement | null;
+      if (layer && toolRef.current === 'select' && touches.size === 0 && candidates.size === 0) {
+        const pageEl = layer.closest('[data-page]') as HTMLElement | null;
+        if (pageEl) {
+          if (root) root.dataset.touchSelect = 'true';
+          setPending(null);
+          writeTouchSelection(null);
+          const candidate: TouchPointerCandidate = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            layer,
+            pageEl,
+            page: Number(pageEl.dataset.page),
+            mode: 'pending',
+            start: 0,
+            end: 0,
+          };
+          candidates.set(e.pointerId, candidate);
+          candidate.timer = window.setTimeout(() => {
+            if (candidate.mode !== 'pending') return;
+            const offset = selectionOffsetAt(candidate, candidate.startX, candidate.startY);
+            if (offset === null) {
+              beginPanFromCandidate(candidate);
+              return;
+            }
+            const word = wordRangeAt(rawText(candidate.layer), offset);
+            candidate.start = word.start;
+            candidate.end = word.end;
+            candidate.mode = 'selecting';
+            const next = makeTouchSelection(candidate.layer, candidate.pageEl, candidate.page, candidate.start, candidate.end);
+            if (next) writeTouchSelection(next);
+            else beginPanFromCandidate(candidate);
+          }, 430);
+          try { el.setPointerCapture(e.pointerId); } catch { /* implicit touch capture is sufficient */ }
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // A second finger should take over for pan/pinch rather than creating a second text selection.
+      if (candidates.size > 0) {
+        for (const candidate of candidates.values()) beginPanFromCandidate(candidate);
+        writeTouchSelection(null);
+        setPending(null);
+      }
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touches.size === 1) samples = [{ t: performance.now(), x: e.clientX, y: e.clientY }];
       if (touches.size === 2) {
@@ -463,6 +659,28 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       }
     };
     const onMove = (e: PointerEvent) => {
+      const candidate = candidates.get(e.pointerId);
+      if (candidate && candidate.mode === 'pending') {
+        if (Math.hypot(e.clientX - candidate.startX, e.clientY - candidate.startY) < 9) return;
+        beginPanFromCandidate(candidate);
+      }
+      if (candidate && (candidate.mode === 'selecting' || candidate.mode === 'adjusting')) {
+        const offset = selectionOffsetAt(candidate, e.clientX, e.clientY);
+        if (offset !== null) {
+          if (candidate.mode === 'selecting') {
+            candidate.end = offset;
+          } else if (candidate.edge === 'start') {
+            candidate.start = Math.min(offset, candidate.end - 1);
+          } else {
+            candidate.end = Math.max(offset, candidate.start + 1);
+          }
+          const next = makeTouchSelection(candidate.layer, candidate.pageEl, candidate.page, candidate.start, candidate.end);
+          if (next) writeTouchSelection(next);
+        }
+        e.preventDefault();
+        return;
+      }
+
       const prev = touches.get(e.pointerId);
       if (!prev) return;
       const cur = { x: e.clientX, y: e.clientY };
@@ -481,6 +699,24 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       }
     };
     const onUp = (e: PointerEvent) => {
+      const candidate = candidates.get(e.pointerId);
+      if (candidate) {
+        if (candidate.timer !== undefined) window.clearTimeout(candidate.timer);
+        if (candidate.handleEl) candidate.handleEl.style.pointerEvents = '';
+        if (candidate.mode === 'pending') {
+          candidates.delete(e.pointerId);
+          return;
+        }
+        if (candidate.mode === 'selecting' || candidate.mode === 'adjusting') {
+          candidates.delete(e.pointerId);
+          const selection = touchSelectionRef.current;
+          const next = selection ? touchSelectionToPending(selection, el) : null;
+          setPending(next);
+          if (!next) writeTouchSelection(null);
+          return;
+        }
+        candidates.delete(e.pointerId);
+      }
       const wasPinch = touches.size >= 2;
       touches.delete(e.pointerId);
       if (wasPinch && touches.size < 2) {
@@ -489,6 +725,11 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         samples = [];
       }
       if (touches.size === 0 && !wasPinch) startInertia();
+    };
+
+    const onContextMenu = (e: Event) => {
+      const root = el.closest('.reader') as HTMLElement | null;
+      if (root?.dataset.touchSelect === 'true') e.preventDefault();
     };
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
@@ -503,13 +744,21 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('contextmenu', onContextMenu);
     return () => {
+      for (const candidate of candidates.values()) {
+        if (candidate.timer !== undefined) window.clearTimeout(candidate.timer);
+        if (candidate.handleEl) candidate.handleEl.style.pointerEvents = '';
+      }
+      const root = el.closest('.reader') as HTMLElement | null;
+      if (root) root.dataset.touchSelect = 'false';
       stopInertia();
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
       el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('contextmenu', onContextMenu);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load.kind]);
@@ -582,6 +831,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       updatedAt: Date.now(),
     };
     setPending(null);
+    writeTouchSelection(null);
     window.getSelection()?.removeAllRanges();
     await edit((d) => addAnnotation(d, ann));
     setFocusId(ann.id);
@@ -789,6 +1039,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
                   penColor={prefs.penColor}
                   markerColor={prefs.markerColor}
                   draft={draft}
+                  touchSelection={touchSelection?.page === i + 1 ? touchSelection : null}
+                  showTouchSelectionHandles={!!pending && touchSelection?.page === i + 1}
                   onRendered={onRendered}
                   onAddInk={addInk}
                   onStartText={(page, x, y) => setDraft({ page, x, y })}
