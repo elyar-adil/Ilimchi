@@ -1,6 +1,6 @@
 /** 数据模型。所有持久化到 GitHub 的结构都在这里定义。 */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'purple';
 export const HIGHLIGHT_COLORS: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
