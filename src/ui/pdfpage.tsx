@@ -286,7 +286,7 @@ export function PdfPage(props: Props) {
           (preview && preview.id === a.id ? preview.rects : a.rects).map((r, i) => (
             <div
               key={`${a.id}-${i}`}
-              class={`hl ${a.color} ${props.focusId === a.id ? 'focus' : ''} ${props.unanchored.has(a.id) ? 'loose' : ''} ${props.selectedId === a.id ? 'selected' : ''}`}
+              class={`hl ${a.color} ${a.decoration ?? 'highlight'} ${props.focusId === a.id ? 'focus' : ''} ${props.unanchored.has(a.id) ? 'loose' : ''} ${props.selectedId === a.id ? 'selected' : ''}`}
               style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}
             />
           )),

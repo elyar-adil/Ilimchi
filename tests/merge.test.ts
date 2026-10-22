@@ -26,6 +26,17 @@ function base(): PaperDoc {
 }
 
 describe('mergeDocs 多设备合并', () => {
+  it('下划线标记可以序列化，旧笔记默认仍为高亮', () => {
+    const underlined = addAnnotation(base(), ann('underline', 2000, { decoration: 'underline' }));
+    const restored = parseDoc(serialize(underlined));
+    expect(restored.annotations[0].decoration).toBe('underline');
+
+    const legacy = JSON.parse(serialize(addAnnotation(base(), ann('legacy', 2100)))) as {
+      annotations: Record<string, unknown>[];
+    };
+    delete legacy.annotations[0].decoration;
+    expect(parseDoc(JSON.stringify(legacy)).annotations[0].decoration).toBe('highlight');
+  });
   it('不同批注的并发新增：两边都保留（并集）', () => {
     const b0 = base();
     const a = addAnnotation(b0, ann('a1', 2000));

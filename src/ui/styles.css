@@ -560,11 +560,22 @@ a.row-main:hover .row-title { color: var(--pencil); }
 .hl-layer { position: absolute; inset: 0; pointer-events: none; }
 .hl { position: absolute; border-radius: 2px; }
 :root[data-theme="light"] .hl, :root:not([data-theme]) .hl { mix-blend-mode: multiply; }
-.hl.yellow { background: var(--hl-yellow); }
-.hl.green { background: var(--hl-green); }
-.hl.blue { background: var(--hl-blue); }
-.hl.pink { background: var(--hl-pink); }
-.hl.purple { background: var(--hl-purple); }
+.hl.highlight.yellow { background: var(--hl-yellow); }
+.hl.highlight.green { background: var(--hl-green); }
+.hl.highlight.blue { background: var(--hl-blue); }
+.hl.highlight.pink { background: var(--hl-pink); }
+.hl.highlight.purple { background: var(--hl-purple); }
+.hl.underline {
+  background: transparent !important;
+  border-radius: 0;
+  mix-blend-mode: normal;
+  border-bottom: 2px solid currentColor;
+}
+.hl.underline.yellow { color: var(--dot-yellow); }
+.hl.underline.green { color: var(--dot-green); }
+.hl.underline.blue { color: var(--dot-blue); }
+.hl.underline.pink { color: var(--dot-pink); }
+.hl.underline.purple { color: var(--dot-purple); }
 .hl.focus { animation: hl-focus 1.4s var(--ease); }
 @keyframes hl-focus { 0%, 100% { filter: none; } 30%, 60% { filter: brightness(0.84) saturate(1.35); } }
 .hl.loose { opacity: 0.5; }
@@ -735,19 +746,51 @@ a.row-main:hover .row-title { color: var(--pencil); }
 .surface.pen { pointer-events: auto; cursor: crosshair; touch-action: none; }
 .surface.text { pointer-events: auto; cursor: text; }
 
-/* 选区浮条：36px，色点按钮 28px，命中区够大 */
+/* 选区浮条脱离滚动容器并置于全局最高层，避免被 PDF 页、侧栏或笔盒遮挡。 */
 .selection-bar {
-  position: absolute;
-  z-index: 20;
+  position: fixed;
+  z-index: 10000;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  height: 36px;
-  padding: 0 4px;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-height: 40px;
+  height: auto;
+  max-width: calc(100vw - 16px);
+  padding: 5px 6px;
   background: var(--paper);
   border-radius: 8px;
-  box-shadow: var(--lift);
+  box-shadow: var(--float);
   animation: pop 120ms var(--ease);
+}
+.selection-modes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--wash);
+  border-radius: 6px;
+}
+.selection-bar .selection-mode {
+  height: 28px;
+  min-width: 48px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.selection-bar .selection-mode.on {
+  background: var(--paper);
+  color: var(--pencil);
+  box-shadow: 0 0 0 1px var(--rule-2);
+}
+.selection-bar .selection-mode:hover:not(:disabled) {
+  filter: none;
+  background: var(--paper);
 }
 @keyframes pop { from { opacity: 0; transform: translate(-50%, 4px); } }
 .selection-bar .sel-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--rule-2); }

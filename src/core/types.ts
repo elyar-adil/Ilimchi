@@ -1,9 +1,10 @@
 /** 数据模型。所有持久化到 GitHub 的结构都在这里定义。 */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'purple';
 export const HIGHLIGHT_COLORS: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
+export type AnnotationDecoration = 'highlight' | 'underline';
 
 /** 相对页面宽高的比例坐标（0..1），与缩放无关。 */
 export interface Rect {
@@ -18,6 +19,8 @@ export interface Annotation {
   /** 1-based 页码 */
   page: number;
   color: HighlightColor;
+  /** 标记方式：旧笔记没有此字段时默认为高亮。 */
+  decoration?: AnnotationDecoration;
   /** 选中的原文（用于换版本 / 换设备时重新定位） */
   quote: string;
   /** 选区前后的上下文，用于在多处相同文本中消歧 */

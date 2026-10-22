@@ -13,7 +13,7 @@ import { pdfCache } from '../core/services';
 import { getPrefs, setPrefs, subscribePrefs } from '../core/prefs';
 import { guessMeta, type TextItem } from '../core/titleguess';
 import type { PaperStore } from '../core/store';
-import type { Annotation, HighlightColor, InkColor, InkShape, PaperDoc, Rect, Shape, TextShape } from '../core/types';
+import type { Annotation, AnnotationDecoration, HighlightColor, InkColor, InkShape, PaperDoc, Rect, Shape, TextShape } from '../core/types';
 import { HIGHLIGHT_COLORS, MARKER_COLORS, PEN_COLORS } from '../core/types';
 import { openPdf, type PDFDoc } from '../pdf/engine';
 import { rawOffsetAtPoint, rawText, readableSlice, rectsForOffsets, selectionToPending, type PendingSelection } from '../pdf/text';
@@ -97,14 +97,13 @@ function makeTouchSelection(layer: HTMLElement, pageEl: HTMLElement, page: numbe
 }
 
 /** Convert the app-owned touch range to the same data shape used by desktop selection. */
-function touchSelectionToPending(selection: TouchTextSelection, viewer: HTMLElement): PendingSelection | null {
+function touchSelectionToPending(selection: TouchTextSelection): PendingSelection | null {
   const raw = rawText(selection.layer);
   const quote = readableSlice(selection.layer, selection.start, selection.end);
   if (!quote) return null;
   const context = contextOf(raw, selection.start, selection.end);
   const rects = selection.rects;
   const pageBox = selection.pageEl.getBoundingClientRect();
-  const viewerBox = viewer.getBoundingClientRect();
   const top = Math.min(...rects.map((r) => r.y)) * pageBox.height + pageBox.top;
   const last = rects[rects.length - 1];
   const left = (last.x + last.w / 2) * pageBox.width + pageBox.left;
@@ -118,8 +117,8 @@ function touchSelectionToPending(selection: TouchTextSelection, viewer: HTMLElem
     prefix: context.prefix,
     suffix: context.suffix,
     rects,
-    anchorTop: Math.max(0, top - viewerBox.top + viewer.scrollTop),
-    anchorLeft: left - viewerBox.left + viewer.scrollLeft,
+    anchorTop: top,
+    anchorLeft: left,
   };
 }
 
@@ -143,6 +142,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   /** 当前点选、可调整端点的高亮 */
   const [hlSel, setHlSel] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingSelection | null>(null);
+  const [markMode, setMarkMode] = useState<AnnotationDecoration>('highlight');
   const [touchSelection, setTouchSelection] = useState<TouchTextSelection | null>(null);
   const touchSelectionRef = useRef<TouchTextSelection | null>(null);
   touchSelectionRef.current = touchSelection;
@@ -731,7 +731,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         if (candidate.mode === 'selecting' || candidate.mode === 'adjusting') {
           candidates.delete(e.pointerId);
           const selection = touchSelectionRef.current;
-          const next = selection ? touchSelectionToPending(selection, el) : null;
+          const next = selection ? touchSelectionToPending(selection) : null;
           setPending(next);
           if (!next) writeTouchSelection(null);
           return;
@@ -824,13 +824,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       const p = selectionToPending(window.getSelection()!);
       const el = scrollRef.current;
       if (!p || !el) return;
-      // 选区坐标来自视口；浮动条位于可滚动的内容里，需换算到内容坐标
-      const box = el.getBoundingClientRect();
-      setPending({
-        ...p,
-        anchorTop: Math.max(0, p.anchorTop - box.top + el.scrollTop),
-        anchorLeft: p.anchorLeft - box.left + el.scrollLeft,
-      });
+      // 选区工具条位于滚动容器之外，使用视口坐标，避免被 PDF 页面和工具栏遮挡。
+      setPending(p);
     }, 0);
   };
 
@@ -865,6 +860,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       id: newId(),
       page: pending.page,
       color,
+      decoration: markMode,
       quote: pending.quote,
       prefix: pending.prefix,
       suffix: pending.suffix,
@@ -1104,17 +1100,6 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
             </div>
           )}
 
-          {pending && tool === 'select' && (
-            <div class="selection-bar" style={{ top: `${pending.anchorTop - 52}px`, left: `${pending.anchorLeft}px` }} onMouseDown={(e) => e.preventDefault()}>
-              {HIGHLIGHT_COLORS.map((c) => (
-                <button class={`swatch ${c}`} title={colorName(c)} aria-label={tr('{color}高亮', { color: colorName(c) })} onClick={() => createHighlight(c, false)} />
-              ))}
-              <span class="sel-sep" />
-              <button class="ghost small on-dark" onClick={copySelectedText}>{tr('复制')}</button>
-              <span class="sel-sep" />
-              <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>{tr('批注')}</button>
-            </div>
-          )}
         </div>
         <FloatingTools
           tool={tool}
@@ -1178,6 +1163,28 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           </aside>
         )}
       </div>
+      {pending && tool === 'select' && (
+        <div
+          class="selection-bar"
+          style={{
+            top: `${Math.max(8, Math.min(window.innerHeight - 56, pending.anchorTop < 72 ? pending.anchorTop + 24 : pending.anchorTop - 52))}px`,
+            left: `${Math.max(Math.min(220, window.innerWidth / 2), Math.min(window.innerWidth - Math.min(220, window.innerWidth / 2), pending.anchorLeft))}px`,
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div class="selection-modes" role="group" aria-label={tr('标记模式')}>
+            <button type="button" class={`selection-mode ${markMode === 'highlight' ? 'on' : ''}`} aria-pressed={markMode === 'highlight'} onClick={() => setMarkMode('highlight')}>{tr('高亮')}</button>
+            <button type="button" class={`selection-mode ${markMode === 'underline' ? 'on' : ''}`} aria-pressed={markMode === 'underline'} onClick={() => setMarkMode('underline')}>{tr('下划线')}</button>
+          </div>
+          <span class="sel-sep" />
+          {HIGHLIGHT_COLORS.map((c) => (
+            <button class={`swatch ${c}`} title={colorName(c)} aria-label={tr('{color}{mode}', { color: colorName(c), mode: tr(markMode === 'underline' ? '下划线' : '高亮') })} onClick={() => createHighlight(c, false)} />
+          ))}
+          <span class="sel-sep" />
+          <button class="ghost small on-dark" onClick={copySelectedText}>{tr('复制')}</button>
+          <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>{tr('批注')}</button>
+        </div>
+      )}
     </div>
   );
 }

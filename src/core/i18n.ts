@@ -28,6 +28,10 @@ export function tr(zh: string, vars?: Vars): string {
 
 const EN: Record<string, string> = {
   "复制": "Copy",
+  "标记模式": "Mark mode",
+  "高亮": "Highlight",
+  "下划线": "Underline",
+  "{color}{mode}": "{color} {mode}",
   "复制失败，请检查浏览器剪贴板权限": "Copy failed. Check clipboard permissions.",
   "GitHub 令牌": "GitHub token",
   "GitHub 令牌无效或已过期，请重新登录": "GitHub token is invalid or expired. Please sign in again.",
