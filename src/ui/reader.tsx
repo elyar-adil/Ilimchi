@@ -146,8 +146,6 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const [touchSelection, setTouchSelection] = useState<TouchTextSelection | null>(null);
   const touchSelectionRef = useRef<TouchTextSelection | null>(null);
   touchSelectionRef.current = touchSelection;
-  const toolRef = useRef(tool);
-  toolRef.current = tool;
   const writeTouchSelection = (next: TouchTextSelection | null) => {
     touchSelectionRef.current = next;
     setTouchSelection(next);
@@ -157,6 +155,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const [newVersion, setNewVersion] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   const [draft, setDraft] = useState<DraftText | null>(null);
   // 撤销 / 重做：只记录用户对标注的修改，快照包含墓碑
   const undoStack = useRef<Snapshot[]>([]);
