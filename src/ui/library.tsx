@@ -23,6 +23,20 @@ const SORTS: { id: SortKey; label: string }[] = [
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
+function totalReadingMs(p: PaperDoc): number {
+  return Object.values(p.readingSessions ?? {}).reduce((sum, ms) => sum + (Number.isFinite(ms) && ms > 0 ? ms : 0), 0);
+}
+
+function readingTimeLabel(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return tr('阅读 {n} 秒', { n: Math.max(1, seconds) });
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  return hours > 0
+    ? tr('阅读 {h} 小时 {m} 分钟', { h: hours, m: minutes % 60 })
+    : tr('阅读 {n} 分钟', { n: minutes });
+}
+
 export function Library({ store, session, onOpenSettings }: { store: PaperStore; session: Session; onOpenSettings: () => void }) {
   useStoreRerender(store);
   const status = useSyncStatus(store);
@@ -56,7 +70,7 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
     const key = (p: PaperDoc) => {
       if (sort === 'added') return -p.createdAt;
       if (sort === 'title') return 0;
-      return -(p.progress.updatedAt || p.updatedAt);
+      return -(p.lastOpenedAt || p.progress.updatedAt || p.updatedAt);
     };
     return list.sort((a, b) => (sort === 'title' ? displayTitle(a).localeCompare(displayTitle(b), 'zh-Hans-CN') : key(a) - key(b)));
   }, [view, q, sort, store.getVersion()]);
@@ -441,6 +455,7 @@ function PaperRow({ paper: p, trash, selecting, picked, onPick, onTrash, onResto
 }) {
   const notes = liveAnnotations(p).length;
   const pct = p.progress.pages ? Math.min(100, Math.round((p.progress.page / p.progress.pages) * 100)) : 0;
+  const readingMs = totalReadingMs(p);
   const body = (
     <>
       <div class="row-title">{displayTitle(p)}</div>
@@ -449,6 +464,7 @@ function PaperRow({ paper: p, trash, selecting, picked, onPick, onTrash, onResto
         {p.version && <span>{p.version}</span>}
         <span>{tr('{n} 条笔记', { n: notes })}</span>
         {p.progress.pages > 0 && <span class="read-pages">{tr('{page} / {pages} 页', { page: p.progress.page, pages: p.progress.pages })}</span>}
+        {readingMs > 0 && <span class="read-time">{readingTimeLabel(readingMs)}</span>}
         {p.tags.map((t) => <span class="tag">{t}</span>)}
       </div>
     </>

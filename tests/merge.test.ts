@@ -67,6 +67,17 @@ describe('mergeDocs 多设备合并', () => {
     expect(mergeDocs(a, b).progress.page).toBe(3);
   });
 
+  it('最后打开时间取最大值，各阅读会话合并且不重复累计', () => {
+    const b0 = base();
+    const a = { ...b0, lastOpenedAt: 5000, readingSessions: { one: 12_000, shared: 8_000 } };
+    const b = { ...b0, lastOpenedAt: 7000, readingSessions: { two: 20_000, shared: 10_000 } };
+    const ab = mergeDocs(a, b);
+    const ba = mergeDocs(b, a);
+    expect(ab.lastOpenedAt).toBe(7000);
+    expect(ab.readingSessions).toEqual({ one: 12_000, shared: 10_000, two: 20_000 });
+    expect(serialize(ab)).toBe(serialize(ba));
+  });
+
   it('交换律：merge(a,b) == merge(b,a)', () => {
     const b0 = base();
     const a = setField(addAnnotation(b0, ann('a', 2000)), 'title', 'A', 2200);
@@ -128,6 +139,8 @@ describe('序列化稳定性', () => {
     expect(d.progress.page).toBe(1);
     expect(d.progress.offset).toBe(1);
     expect(d.tags).toEqual(['t']);
+    expect(d.lastOpenedAt).toBe(0);
+    expect(d.readingSessions).toEqual({});
   });
 
   it('拒绝比当前应用更新的 schema', () => {

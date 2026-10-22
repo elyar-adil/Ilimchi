@@ -105,6 +105,10 @@ export interface PaperDoc {
   version: string;
   tags: string[];
   progress: Progress;
+  /** 最近一次打开论文的时间戳；与阅读进度更新相互独立。 */
+  lastOpenedAt: number;
+  /** 每个阅读会话累计的毫秒数；合并时按会话 ID 取最大值再求和。 */
+  readingSessions: Record<string, number>;
   annotations: Annotation[];
   shapes: Shape[];
   createdAt: number;

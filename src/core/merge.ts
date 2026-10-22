@@ -21,6 +21,8 @@ export function mergeDocs(a: PaperDoc, b: PaperDoc): PaperDoc {
   }
 
   const progress: Progress = pickProgress(a.progress, b.progress);
+  const readingSessions = mergeReadingSessions(a.readingSessions, b.readingSessions);
+  const lastOpenedAt = Math.max(a.lastOpenedAt ?? 0, b.lastOpenedAt ?? 0);
 
   const byId = new Map<string, Annotation>();
   for (const ann of [...a.annotations, ...b.annotations]) {
@@ -48,6 +50,8 @@ export function mergeDocs(a: PaperDoc, b: PaperDoc): PaperDoc {
     deletedAt: out.deletedAt as number | null,
     fieldTimes,
     progress,
+    lastOpenedAt,
+    readingSessions,
     annotations,
     shapes,
     createdAt: Math.min(a.createdAt || b.createdAt, b.createdAt || a.createdAt),
@@ -68,6 +72,17 @@ function pick<T>(ta: number, va: T, tb: number, vb: T): [number, T] {
 function pickProgress(a: Progress, b: Progress): Progress {
   if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
   return key(a) >= key(b) ? a : b;
+}
+
+function mergeReadingSessions(
+  a: Record<string, number> | undefined,
+  b: Record<string, number> | undefined,
+): Record<string, number> {
+  const merged: Record<string, number> = { ...(a ?? {}) };
+  for (const [id, duration] of Object.entries(b ?? {})) {
+    merged[id] = Math.max(merged[id] ?? 0, duration);
+  }
+  return merged;
 }
 
 function newer<T extends { updatedAt: number; deletedAt?: number }>(a: T, b: T): T {

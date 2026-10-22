@@ -17,9 +17,9 @@ import type { Annotation, HighlightColor, InkColor, InkShape, PaperDoc, Shape, T
 import { HIGHLIGHT_COLORS, MARKER_COLORS, PEN_COLORS } from '../core/types';
 import { openPdf, type PDFDoc } from '../pdf/engine';
 import { rawText, rectsForOffsets, selectionToPending, type PendingSelection } from '../pdf/text';
-import { navigate, useStoreRerender, useSyncStatus } from './nav';
+import { navigate, useStoreRerender } from './nav';
 import { restoreSnapshot, snapshotOf, type Snapshot } from '../core/undo';
-import { SyncBadge, sourceLabel } from './shared';
+import { sourceLabel } from './shared';
 import { EditableText, TagEditor } from './fields';
 import { TEXT_SIDE_PX, type HlPatch } from './pdfpage';
 import { PdfPage, type DraftText } from './pdfpage';
@@ -47,7 +47,6 @@ type LoadState =
 
 export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; paperId: string; onOpenSettings: () => void }) {
   useStoreRerender(store);
-  const status = useSyncStatus(store);
   const doc = store.get(paperId) as PaperDoc;
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -82,6 +81,48 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const restoredRef = useRef(false);
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relocating = useRef(new Set<string>());
+
+  // 打开时单独记录时间，不依赖翻页进度；刚打开但尚未滚动的论文也排在最前。
+  useEffect(() => {
+    const openedAt = Date.now();
+    void store.mutate(paperId, (d) => ({ ...d, lastOpenedAt: Math.max(d.lastOpenedAt ?? 0, openedAt) }), { lowPriority: true }).catch(() => undefined);
+  }, [store, paperId]);
+
+  // 只累计 PDF 已就绪且标签页可见的时间。每次打开产生独立 session ID，合并时不会互相覆盖。
+  useEffect(() => {
+    if (load.kind !== 'ready') return;
+    const sessionId = newId();
+    let activeSince: number | null = document.visibilityState === 'visible' ? performance.now() : null;
+    let pendingMs = 0;
+    const flush = () => {
+      if (activeSince !== null) {
+        pendingMs += Math.max(0, performance.now() - activeSince);
+        activeSince = performance.now();
+      }
+      const elapsed = Math.floor(pendingMs);
+      if (elapsed < 1) return;
+      pendingMs -= elapsed;
+      void store.mutate(paperId, (d) => {
+        const sessions = d.readingSessions ?? {};
+        return { ...d, readingSessions: { ...sessions, [sessionId]: (sessions[sessionId] ?? 0) + elapsed } };
+      }, { lowPriority: true }).catch(() => undefined);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flush();
+        activeSince = null;
+      } else if (activeSince === null) {
+        activeSince = performance.now();
+      }
+    };
+    const timer = window.setInterval(() => { if (activeSince !== null) flush(); }, 15_000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (activeSince !== null) flush();
+    };
+  }, [store, paperId, load.kind]);
 
   // 工具切换时清理未完成的操作
   useEffect(() => {
@@ -680,7 +721,6 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           setPrefs({ sidebar: !showSide });
         }}
         onOpenSettings={onOpenSettings}
-        sync={<SyncBadge status={status} onSync={() => void store.sync()} />}
       />
 
       {newVersion && (

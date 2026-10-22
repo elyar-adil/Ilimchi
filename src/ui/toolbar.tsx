@@ -1,5 +1,4 @@
 import { tr } from '../core/i18n';
-import type { ComponentChildren } from 'preact';
 import { Icon, type IconName } from './icons';
 import { INK_HEX, type InkColor } from '../core/types';
 
@@ -25,7 +24,6 @@ interface TopProps {
   sidebarOpen: boolean;
   onToggleSide: () => void;
   onOpenSettings: () => void;
-  sync: ComponentChildren;
 }
 
 /** 顶部一行：返回、标题、缩放、侧栏、设置。 */
@@ -46,7 +44,6 @@ export function TopBar(p: TopProps) {
       <button class={`icon-btn ${p.sidebarOpen ? 'on' : ''}`} onClick={p.onToggleSide} title={tr('笔记')} aria-label={tr('显示或隐藏笔记')}>
         <Icon name="sidebar" />
       </button>
-      {p.sync}
       <button class="icon-btn" onClick={p.onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
         <Icon name="gear" />
       </button>

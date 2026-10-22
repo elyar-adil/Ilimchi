@@ -28,6 +28,8 @@ export function newPaper(ref: PaperRef, now = Date.now()): PaperDoc {
     version: ref.version,
     tags: [],
     progress: { page: 1, pages: 0, offset: 0, updatedAt: 0 },
+    lastOpenedAt: 0,
+    readingSessions: {},
     annotations: [],
     shapes: [],
     createdAt: now,
@@ -109,6 +111,8 @@ export function serialize(doc: PaperDoc): string {
     version: doc.version,
     tags: doc.tags,
     progress: doc.progress,
+    lastOpenedAt: doc.lastOpenedAt ?? 0,
+    readingSessions: Object.fromEntries(Object.entries(doc.readingSessions ?? {}).sort(([a], [b]) => a.localeCompare(b))),
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     deletedAt: doc.deletedAt,
@@ -206,6 +210,12 @@ export function parseDoc(text: string): PaperDoc {
     ? (o.annotations.map(sanitizeAnnotation).filter(Boolean) as Annotation[])
     : [];
   const shapes = Array.isArray(o.shapes) ? (o.shapes.map(sanitizeShape).filter(Boolean) as Shape[]) : [];
+  const rawSessions = o.readingSessions && typeof o.readingSessions === 'object' ? (o.readingSessions as Record<string, unknown>) : {};
+  const readingSessions = Object.fromEntries(
+    Object.entries(rawSessions)
+      .filter(([id, value]) => id.length > 0 && typeof value === 'number' && Number.isFinite(value) && value >= 0)
+      .map(([id, value]) => [id, Math.floor(value as number)]),
+  );
   const tags = Array.isArray(o.tags) ? [...new Set(o.tags.filter((t): t is string => typeof t === 'string' && t.trim() !== ''))] : [];
 
   return {
@@ -223,6 +233,8 @@ export function parseDoc(text: string): PaperDoc {
       offset: Math.min(1, Math.max(0, num(p.offset, 0))),
       updatedAt: num(p.updatedAt),
     },
+    lastOpenedAt: num(o.lastOpenedAt),
+    readingSessions,
     annotations,
     shapes,
     createdAt: num(o.createdAt),
