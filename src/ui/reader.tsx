@@ -554,17 +554,17 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     const onDown = (e: PointerEvent) => {
       const target = e.target instanceof Element ? e.target : null;
       const root = el.closest('.reader') as HTMLElement | null;
-      if (e.pointerType === 'pen') {
+      const isPen = e.pointerType === 'pen';
+      const isTouch = e.pointerType === 'touch';
+
+      if (isPen) {
         lastPenAt = performance.now();
         stopInertia();
-        if (root) root.dataset.touchSelect = 'false';
-        if (target?.closest('.textLayer')) {
-          setPending(null);
-          writeTouchSelection(null);
-        }
-        return;
-      }
-      if (e.pointerType !== 'touch') {
+      } else if (isTouch) {
+        if (performance.now() - lastPenAt < PEN_GRACE_MS) return;
+        if (e.width > PALM_PX || e.height > PALM_PX) return;
+        stopInertia();
+      } else {
         if (e.pointerType === 'mouse') {
           if (root) root.dataset.touchSelect = 'false';
           if (target?.closest('.textLayer')) {
@@ -574,9 +574,6 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         }
         return;
       }
-      if (performance.now() - lastPenAt < PEN_GRACE_MS) return;
-      if (e.width > PALM_PX || e.height > PALM_PX) return;
-      stopInertia();
 
       const handle = target?.closest('[data-touch-selection-handle]') as HTMLElement | null;
       const existing = touchSelectionRef.current;
@@ -596,10 +593,10 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           edge,
           handleEl: handle,
         };
-        // Let caretPositionFromPoint see the text underneath the handle while the finger drags.
+        // Let caretPositionFromPoint see the text underneath the handle while the finger or stylus drags.
         handle.style.pointerEvents = 'none';
         candidates.set(e.pointerId, candidate);
-        try { el.setPointerCapture(e.pointerId); } catch { /* implicit touch capture is sufficient */ }
+        try { el.setPointerCapture(e.pointerId); } catch { /* implicit pointer capture is sufficient */ }
         e.preventDefault();
         return;
       }
@@ -618,30 +615,54 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
             layer,
             pageEl,
             page: Number(pageEl.dataset.page),
-            mode: 'pending',
+            mode: isPen ? 'selecting' : 'pending',
             start: 0,
             end: 0,
           };
-          candidates.set(e.pointerId, candidate);
-          candidate.timer = window.setTimeout(() => {
-            if (candidate.mode !== 'pending') return;
-            const offset = selectionOffsetAt(candidate, candidate.startX, candidate.startY);
+          if (isPen) {
+            const offset = selectionOffsetAt(candidate, e.clientX, e.clientY);
             if (offset === null) {
-              beginPanFromCandidate(candidate);
+              if (root) root.dataset.touchSelect = 'false';
               return;
             }
-            const word = wordRangeAt(rawText(candidate.layer), offset);
+            const word = wordRangeAt(rawText(layer), offset);
             candidate.start = word.start;
             candidate.end = word.end;
-            candidate.mode = 'selecting';
-            const next = makeTouchSelection(candidate.layer, candidate.pageEl, candidate.page, candidate.start, candidate.end);
+            candidates.set(e.pointerId, candidate);
+            const next = makeTouchSelection(layer, pageEl, candidate.page, candidate.start, candidate.end);
             if (next) writeTouchSelection(next);
-            else beginPanFromCandidate(candidate);
-          }, 430);
-          try { el.setPointerCapture(e.pointerId); } catch { /* implicit touch capture is sufficient */ }
+            else {
+              candidates.delete(e.pointerId);
+              if (root) root.dataset.touchSelect = 'false';
+              return;
+            }
+          } else {
+            candidates.set(e.pointerId, candidate);
+            candidate.timer = window.setTimeout(() => {
+              if (candidate.mode !== 'pending') return;
+              const offset = selectionOffsetAt(candidate, candidate.startX, candidate.startY);
+              if (offset === null) {
+                beginPanFromCandidate(candidate);
+                return;
+              }
+              const word = wordRangeAt(rawText(candidate.layer), offset);
+              candidate.start = word.start;
+              candidate.end = word.end;
+              candidate.mode = 'selecting';
+              const next = makeTouchSelection(candidate.layer, candidate.pageEl, candidate.page, candidate.start, candidate.end);
+              if (next) writeTouchSelection(next);
+              else beginPanFromCandidate(candidate);
+            }, 430);
+          }
+          try { el.setPointerCapture(e.pointerId); } catch { /* implicit pointer capture is sufficient */ }
           e.preventDefault();
           return;
         }
+      }
+
+      if (isPen) {
+        if (root) root.dataset.touchSelect = 'false';
+        return;
       }
 
       // A second finger should take over for pan/pinch rather than creating a second text selection.
