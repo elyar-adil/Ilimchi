@@ -1,4 +1,4 @@
-import { tr } from '../core/i18n';
+import { getLanguagePreference, setLanguagePreference, tr, type LanguagePreference } from '../core/i18n';
 import { useState } from 'preact/hooks';
 import type { Session } from '../core/auth';
 import { backupFileName, exportBackup, importBackup } from '../core/backup';
@@ -10,9 +10,9 @@ import { SyncBadge } from './shared';
 import { askConfirm } from './confirm';
 
 const THEMES: { id: Theme; label: string }[] = [
-  { id: 'system', label: tr('自动') },
-  { id: 'light', label: tr('浅色') },
-  { id: 'dark', label: tr('深色') },
+  { id: 'system', label: '自动' },
+  { id: 'light', label: '浅色' },
+  { id: 'dark', label: '深色' },
 ];
 
 export function Settings({ store, session, onClose, onSignOut }: {
@@ -58,13 +58,32 @@ export function Settings({ store, session, onClose, onSignOut }: {
         </header>
 
         <section class="group">
+          <h3 class="group-title">{tr('语言')}</h3>
+          <div class="set">
+            <label class="set-label" for="language-select">{tr('界面语言')}</label>
+            <div class="set-control">
+              <select
+                id="language-select"
+                class="set-select"
+                value={getLanguagePreference()}
+                onChange={(e) => setLanguagePreference((e.target as HTMLSelectElement).value as LanguagePreference)}
+              >
+                <option value="system">{tr('跟随系统')}</option>
+                <option value="zh">{tr('简体中文')}</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="group">
           <h3 class="group-title">{tr('外观')}</h3>
           <div class="set">
             <span class="set-label">{tr('模式')}</span>
             <div class="set-control">
               <div class="segmented">
                 {THEMES.map((t) => (
-                  <button class={prefs.theme === t.id ? 'on' : ''} onClick={() => update({ theme: t.id })}>{t.label}</button>
+                  <button class={prefs.theme === t.id ? 'on' : ''} onClick={() => update({ theme: t.id })}>{tr(t.label)}</button>
                 ))}
               </div>
             </div>
@@ -84,7 +103,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
             <span class="set-label">{tr('配色')}</span>
             <div class="set-control swatches">
               {ACCENTS.map((a) => (
-                <button class={`page-swatch ${prefs.accent === a.id ? 'on' : ''}`} style={{ background: a.light }} title={a.name} aria-label={a.name} onClick={() => update({ accent: a.id as AccentId })} />
+                <button class={`page-swatch ${prefs.accent === a.id ? 'on' : ''}`} style={{ background: a.light }} title={tr(a.name)} aria-label={tr(a.name)} onClick={() => update({ accent: a.id as AccentId })} />
               ))}
             </div>
           </div>
@@ -92,7 +111,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
             <span class="set-label">{tr('页面底色')}</span>
             <div class="set-control swatches">
               {PAGE_TINTS.map((t) => (
-                <button class={`page-swatch ${prefs.pageTint === t.hex ? 'on' : ''}`} style={{ background: t.hex }} title={t.name} aria-label={t.name} onClick={() => update({ pageTint: t.hex })} />
+                <button class={`page-swatch ${prefs.pageTint === t.hex ? 'on' : ''}`} style={{ background: t.hex }} title={tr(t.name)} aria-label={tr(t.name)} onClick={() => update({ pageTint: t.hex })} />
               ))}
             </div>
           </div>
@@ -122,7 +141,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
                 value={prefs.syncInterval}
                 onChange={(e) => update({ syncInterval: (e.target as HTMLSelectElement).value as SyncInterval })}
               >
-                {SYNC_INTERVALS.map((s) => <option value={s.id}>{s.label}</option>)}
+                {SYNC_INTERVALS.map((s) => <option value={s.id}>{tr(s.label)}</option>)}
               </select>
             </div>
           </div>
