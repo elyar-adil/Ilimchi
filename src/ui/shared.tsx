@@ -3,16 +3,16 @@ import type { SyncStatus } from '../core/store';
 import type { PaperDoc } from '../core/types';
 
 const LABEL: Record<SyncStatus['state'], string> = {
-  idle: tr('已同步'),
-  syncing: tr('同步中'),
-  offline: tr('离线'),
-  auth: tr('令牌失效'),
-  error: tr('同步出错'),
+  idle: '已同步',
+  syncing: '同步中',
+  offline: '离线',
+  auth: '令牌失效',
+  error: '同步出错',
 };
 
 export function SyncBadge({ status, onSync }: { status: SyncStatus; onSync: () => void }) {
   const cls = status.state === 'idle' && status.pending === 0 ? 'ok' : status.state === 'idle' ? 'pending' : status.state;
-  const text = status.state === 'idle' && status.pending > 0 ? tr('待同步 {n}', { n: status.pending }) : LABEL[status.state];
+  const text = status.state === 'idle' && status.pending > 0 ? tr('待同步 {n}', { n: status.pending }) : tr(LABEL[status.state]);
   return (
     <button class={`sync ${cls}`} onClick={onSync} title={status.error ?? tr('立即同步')}>
       <span class="dot" />
