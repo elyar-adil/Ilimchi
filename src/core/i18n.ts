@@ -1,11 +1,14 @@
 /**
- * 界面语言：跟随系统语言自动选择（系统首选语言为中文则用中文，否则英文）。
- * 文案以中文原文作为键；英文译文见 EN。缺译时回退到中文。
+ * Interface language defaults to the system setting and can be overridden in Settings.
+ * Chinese source strings are keys; English translations are in EN. Missing translations fall back to Chinese.
  */
 
 export type Lang = 'zh' | 'en';
+export type LanguagePreference = 'system' | Lang;
 
-function detectLang(): Lang {
+const LANGUAGE_KEY = 'paper-reader.language';
+
+function detectSystemLang(): Lang {
   try {
     const list = navigator.languages?.length ? navigator.languages : [navigator.language];
     const first = list.find((l) => !!l) ?? 'en';
@@ -15,7 +18,44 @@ function detectLang(): Lang {
   }
 }
 
-export const LANG: Lang = detectLang();
+function readLanguagePreference(): LanguagePreference {
+  try {
+    const value = localStorage.getItem(LANGUAGE_KEY);
+    if (value === 'zh' || value === 'en' || value === 'system') return value;
+  } catch {
+    /* local storage may be unavailable */
+  }
+  return 'system';
+}
+
+let languagePreference: LanguagePreference = readLanguagePreference();
+export let LANG: Lang = languagePreference === 'system' ? detectSystemLang() : languagePreference;
+
+const languageListeners = new Set<() => void>();
+
+export function getLanguagePreference(): LanguagePreference {
+  return languagePreference;
+}
+
+export function setLanguagePreference(preference: LanguagePreference): void {
+  languagePreference = preference;
+  try {
+    localStorage.setItem(LANGUAGE_KEY, preference);
+  } catch {
+    /* language still changes for this session */
+  }
+
+  LANG = preference === 'system' ? detectSystemLang() : preference;
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  }
+  for (const listener of [...languageListeners]) listener();
+}
+
+export function subscribeLanguage(listener: () => void): () => void {
+  languageListeners.add(listener);
+  return () => languageListeners.delete(listener);
+}
 
 type Vars = Record<string, string | number>;
 
@@ -112,6 +152,10 @@ const EN: Record<string, string> = {
   "备份": "Backup",
   "备份文件不是合法的 JSON": "The backup file is not valid JSON",
   "外观": "Appearance",
+  "语言": "Language",
+  "界面语言": "Interface language",
+  "跟随系统": "System default",
+  "简体中文": "Simplified Chinese",
   "夜间阅读": "Night reading",
   "完成": "Done",
   "实时": "Live",
