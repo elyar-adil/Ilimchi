@@ -1,4 +1,4 @@
-import { tr } from '../core/i18n';
+import { subscribeLanguage, tr } from '../core/i18n';
 import { useEffect, useState } from 'preact/hooks';
 import { restore, signOut, unlock, type Config, type Session } from '../core/auth';
 import { endSession, idb, startSession, vault } from '../core/services';
@@ -20,11 +20,14 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const hash = useHash();
+  const [, setLanguageVersion] = useState(0);
 
   useEffect(() => {
     applyTheme();
     return subscribePrefs(applyTheme);
   }, []);
+
+  useEffect(() => subscribeLanguage(() => setLanguageVersion((v) => v + 1)), []);
 
   const enter = async (s: Session) => {
     const st = await startSession(s);
