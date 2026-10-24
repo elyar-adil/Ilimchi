@@ -16,9 +16,9 @@ import { askConfirm } from './confirm';
 type View = { kind: 'all' } | { kind: 'untagged' } | { kind: 'trash' } | { kind: 'tag'; tag: string };
 
 const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'recent', label: tr('最近阅读') },
-  { id: 'added', label: tr('添加时间') },
-  { id: 'title', label: tr('标题') },
+  { id: 'recent', label: '最近阅读' },
+  { id: 'added', label: '添加时间' },
+  { id: 'title', label: '标题' },
 ];
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
@@ -267,7 +267,7 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
             <input type="search" placeholder={tr('搜索')} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} aria-label={tr('搜索论文')} />
           </label>
           <select class="sort" value={sort} onChange={(e) => changeSort((e.target as HTMLSelectElement).value as SortKey)} aria-label={tr('排序')}>
-            {SORTS.map((s) => <option value={s.id}>{s.label}</option>)}
+            {SORTS.map((s) => <option value={s.id}>{tr(s.label)}</option>)}
           </select>
           <button class={`icon-btn ${selecting ? 'on' : ''}`} onClick={() => { setSelecting((v) => !v); setPicked(new Set()); setTagBar(null); }} title={tr('整理')} aria-label={tr('整理')} aria-pressed={selecting}>
             <Icon name="list" />
