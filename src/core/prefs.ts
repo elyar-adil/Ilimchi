@@ -1,27 +1,26 @@
-import { tr } from './i18n';
 import type { HighlightColor, InkColor } from './types';
 
 /** 配色：只改变强调色（选中、按钮、高亮提示等），与浅色/深色模式相互独立 */
 export type AccentId = 'pencil' | 'sage' | 'ochre' | 'plum' | 'graphite';
 
 export const ACCENTS: { id: AccentId; name: string; light: string; dark: string }[] = [
-  { id: 'pencil', name: tr('铅笔蓝'), light: '#2f6f9f', dark: '#86b6da' },
-  { id: 'sage', name: tr('墨绿'), light: '#3b6e56', dark: '#8fc4a6' },
-  { id: 'ochre', name: tr('赭石'), light: '#9a5b2e', dark: '#dba878' },
-  { id: 'plum', name: tr('梅紫'), light: '#6d4c8c', dark: '#bca3dc' },
-  { id: 'graphite', name: tr('石墨'), light: '#3f444b', dark: '#c9ced6' },
+  { id: 'pencil', name: '铅笔蓝', light: '#2f6f9f', dark: '#86b6da' },
+  { id: 'sage', name: '墨绿', light: '#3b6e56', dark: '#8fc4a6' },
+  { id: 'ochre', name: '赭石', light: '#9a5b2e', dark: '#dba878' },
+  { id: 'plum', name: '梅紫', light: '#6d4c8c', dark: '#bca3dc' },
+  { id: 'graphite', name: '石墨', light: '#3f444b', dark: '#c9ced6' },
 ];
 
 /** 论文推送到 GitHub 的频率：间隔内的多次修改合并为一次提交 */
 export type SyncInterval = 'live' | 'm1' | 'm5' | 'm15' | 'h1' | 'manual';
 
 export const SYNC_INTERVALS: { id: SyncInterval; label: string }[] = [
-  { id: 'live', label: tr('实时') },
-  { id: 'm1', label: tr('每 1 分钟') },
-  { id: 'm5', label: tr('每 5 分钟') },
-  { id: 'm15', label: tr('每 15 分钟') },
-  { id: 'h1', label: tr('每小时') },
-  { id: 'manual', label: tr('仅手动') },
+  { id: 'live', label: '实时' },
+  { id: 'm1', label: '每 1 分钟' },
+  { id: 'm5', label: '每 5 分钟' },
+  { id: 'm15', label: '每 15 分钟' },
+  { id: 'h1', label: '每小时' },
+  { id: 'manual', label: '仅手动' },
 ];
 
 /** 各频率对应的推送延迟：push 为普通修改，low 为阅读进度等低优先级修改；null 表示不自动推送 */
@@ -71,10 +70,10 @@ export interface Prefs {
 }
 
 export const PAGE_TINTS: { name: string; hex: string }[] = [
-  { name: tr('纸白'), hex: '#ffffff' },
-  { name: tr('米黄'), hex: '#f8f1de' },
-  { name: tr('护眼绿'), hex: '#e6f0e1' },
-  { name: tr('浅灰'), hex: '#ececea' },
+  { name: '纸白', hex: '#ffffff' },
+  { name: '米黄', hex: '#f8f1de' },
+  { name: '护眼绿', hex: '#e6f0e1' },
+  { name: '浅灰', hex: '#ececea' },
 ];
 
 const KEY = 'paper-reader.prefs';
