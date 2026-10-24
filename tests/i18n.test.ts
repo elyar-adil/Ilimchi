@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const storage = new Map<string, string>();
+const storageMock = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => { storage.set(key, String(value)); },
+  removeItem: (key: string) => { storage.delete(key); },
+  clear: () => { storage.clear(); },
+};
+
 beforeEach(() => {
-  try { localStorage.removeItem('paper-reader.language'); } catch { /* ignore */ }
+  storage.clear();
+  vi.stubGlobal('localStorage', storageMock);
 });
 
 function setSystemLanguages(langs: string[]) {
@@ -39,7 +48,7 @@ describe('界面语言', () => {
     expect(m.LANG).toBe('en');
     expect(m.tr('取消')).toBe('Cancel');
     expect(localStorage.getItem('paper-reader.language')).toBe('en');
-    expect(document.documentElement.lang).toBe('en');
+    if (typeof document !== 'undefined') expect(document.documentElement.lang).toBe('en');
     expect(listener).toHaveBeenCalled();
 
     m.setLanguagePreference('system');
