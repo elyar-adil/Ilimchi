@@ -5,6 +5,8 @@ import type { Annotation, InkColor, InkShape, Rect, Shape, TextShape } from '../
 import { contextOf, locateQuote, pointInRects } from '../core/anchor';
 import { rawOffsetAtPoint, rawText, readableSlice, rectsForOffsets } from '../pdf/text';
 import type { Tool } from './toolbar';
+import type { TransBlock } from '../core/translate';
+import { drawTranslation } from './translayer';
 
 export interface DraftText {
   page: number;
@@ -79,6 +81,8 @@ interface Props {
   onSelectHl: (id: string | null) => void;
   onAdjustHl: (id: string, patch: HlPatch) => void;
   onDeleteHl: (id: string) => void;
+  /** 译文块（已翻译时非空）：直接绘制到页面位图上替换原文 */
+  trans: TransBlock[] | null;
 }
 
 /**
@@ -87,6 +91,7 @@ interface Props {
  */
 export function PdfPage(props: Props) {
   const { pdf, num, top, width, height, scale, scrollRef, tool } = props;
+  const trans = props.trans;
   const ink = props.ink;
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -143,6 +148,7 @@ export function PdfPage(props: Props) {
       canvas.style.height = `${vp.height}px`;
       const cctx = canvas.getContext('2d');
       cctx?.drawImage(off, 0, 0);
+      if (trans && trans.length && cctx) drawTranslation(cctx, trans, scale * dpr);
       if (ink && cctx) applyInk(cctx, canvas.width, canvas.height);
       layer.replaceChildren();
       layer.style.setProperty('--total-scale-factor', String(scale));
@@ -160,7 +166,7 @@ export function PdfPage(props: Props) {
       task?.cancel();
       tl?.cancel();
     };
-  }, [visible, scale, pdf, num, ink]);
+  }, [visible, scale, pdf, num, ink, trans]);
 
   /** 指针坐标 → 页面比例坐标 */
   const toRatio = (e: PointerEvent | MouseEvent): [number, number] | null => {

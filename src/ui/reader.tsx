@@ -9,7 +9,9 @@ import {
 import { contextOf, locateQuote } from '../core/anchor';
 import { loadPdf, importLocalPdf, PdfLoadError } from '../core/pdfsource';
 import { cacheKey } from '../core/pdfcache';
-import { pdfCache } from '../core/services';
+import { idb, pdfCache } from '../core/services';
+import { AI_CHANGED_EVENT, getAiConfig, hasAiKey, loadAiKey, resolveTargetLang } from '../core/ai';
+import { loadPageTranslation, translatePaper, type TransBlock } from '../core/translate';
 import { getPrefs, setPrefs, subscribePrefs } from '../core/prefs';
 import { guessMeta, type TextItem } from '../core/titleguess';
 import type { PaperStore } from '../core/store';
@@ -153,6 +155,13 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const [unanchored, setUnanchored] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [newVersion, setNewVersion] = useState<string | null>(null);
+  // AI 翻译：默认隐藏，配置好服务与 Key 后才出现
+  const [aiReady, setAiReady] = useState(false);
+  const [trans, setTrans] = useState<Record<number, TransBlock[]>>({});
+  const [showTrans, setShowTrans] = useState(true);
+  const [transJob, setTransJob] = useState<{ done: number; total: number } | null>(null);
+  const [transErr, setTransErr] = useState<string | null>(null);
+  const transAbort = useRef<AbortController | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
   const toolRef = useRef(tool);
@@ -991,6 +1000,68 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     }
   };
 
+  // ---------- AI 翻译 ----------
+  const checkAi = async () => {
+    const cfg = getAiConfig();
+    setAiReady(!!cfg.baseUrl && !!cfg.model && (await hasAiKey(idb)));
+  };
+  useEffect(() => {
+    void checkAi();
+    window.addEventListener(AI_CHANGED_EVENT, checkAi);
+    return () => window.removeEventListener(AI_CHANGED_EVENT, checkAi);
+  }, [paperId]);
+
+  // 打开论文时读取本地缓存的译文（按当前目标语言）
+  const loadedPdf = load.kind === 'ready' ? load.loaded.pdf : null;
+  useEffect(() => {
+    if (!loadedPdf) return;
+    let cancelled = false;
+    const lang = resolveTargetLang(getAiConfig());
+    void (async () => {
+      const found: Record<number, TransBlock[]> = {};
+      for (let n = 1; n <= loadedPdf.numPages; n++) {
+        const blocks = await loadPageTranslation(idb, doc.id, doc.version, lang, n);
+        if (cancelled) return;
+        if (blocks) found[n] = blocks;
+      }
+      if (!cancelled) setTrans(found);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedPdf, doc.id, doc.version]);
+
+  const startTranslate = async () => {
+    if (!loadedPdf) return;
+    const cfg = getAiConfig();
+    const key = await loadAiKey(idb);
+    if (!key) return setTransErr(tr('尚未设置 API Key'));
+    setTransErr(null);
+    const ctrl = new AbortController();
+    transAbort.current = ctrl;
+    setShowTrans(true);
+    setTransJob({ done: 0, total: loadedPdf.numPages });
+    try {
+      await translatePaper({
+        pdf: loadedPdf,
+        idb,
+        paperId: doc.id,
+        version: doc.version,
+        cfg,
+        apiKey: key,
+        signal: ctrl.signal,
+        onPage: (n, blocks) => setTrans((m) => ({ ...m, [n]: blocks })),
+        onProgress: (done, total) => setTransJob({ done, total }),
+      });
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) setTransErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      transAbort.current = null;
+      setTransJob(null);
+    }
+  };
+  const hasTrans = Object.keys(trans).length > 0;
+
   const anns = liveAnnotations(doc).sort((a, b) => a.page - b.page || a.start - b.start);
   const shapes = liveShapes(doc).sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
   const loaded = load.kind === 'ready' ? load.loaded : null;
@@ -1013,6 +1084,21 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           setPrefs({ sidebar: !showSide });
         }}
         onOpenSettings={onOpenSettings}
+        ai={
+          aiReady ? (
+            transJob ? (
+              <button class="ghost small" onClick={() => transAbort.current?.abort()} title={tr('停止翻译')}>
+                {tr('翻译中 {done}/{total}', { done: transJob.done, total: transJob.total })}
+              </button>
+            ) : hasTrans ? (
+              <button class="ghost small" onClick={() => setShowTrans((v) => !v)} title={tr('切换译文与原文')}>
+                {showTrans ? tr('查看原文') : tr('查看译文')}
+              </button>
+            ) : (
+              <button class="ghost small" onClick={() => void startTranslate()} title={tr('用 AI 翻译整篇论文')}>{tr('翻译')}</button>
+            )
+          ) : null
+        }
       />
 
       {newVersion && (
@@ -1021,6 +1107,14 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           <div class="grow" />
           <button class="ghost small" onClick={() => setNewVersion(null)}>{tr('忽略')}</button>
           <button class="small" onClick={() => { void changeVersion(newVersion); setNewVersion(null); }}>{tr('切换')}</button>
+        </div>
+      )}
+
+      {transErr && (
+        <div class="banner">
+          <span class="error">{transErr}</span>
+          <div class="grow" />
+          <button class="ghost small" onClick={() => setTransErr(null)}>{tr('忽略')}</button>
         </div>
       )}
 
@@ -1073,6 +1167,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
                   scrollRef={scrollRef}
                   sideRoom={sideRoom}
                   ink={inkOn}
+                  trans={showTrans ? trans[i + 1] ?? null : null}
                   anns={anns.filter((a) => a.page === i + 1)}
                   shapes={shapes.filter((s) => s.page === i + 1)}
                   unanchored={unanchored}

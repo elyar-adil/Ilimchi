@@ -2,7 +2,11 @@ import { getLanguagePreference, setLanguagePreference, tr, type LanguagePreferen
 import { useState } from 'preact/hooks';
 import type { Session } from '../core/auth';
 import { backupFileName, exportBackup, importBackup } from '../core/backup';
-import { pdfCache } from '../core/services';
+import { idb, pdfCache } from '../core/services';
+import {
+  TARGET_LANGS, clearAiKey, getAiConfig, hasAiKey, isAiRevealed, notifyAiChanged, revealAi, saveAiKey, setAiConfig, type AiKeyMode,
+} from '../core/ai';
+import { useEffect } from 'preact/hooks';
 import { ACCENTS, getPrefs, setPrefs, PAGE_TINTS, SYNC_INTERVALS, type AccentId, type DarkStyle, type SyncInterval, type Theme } from '../core/prefs';
 import type { PaperStore } from '../core/store';
 import { useStoreRerender, useSyncStatus } from './nav';
@@ -26,6 +30,38 @@ export function Settings({ store, session, onClose, onSignOut }: {
   const [prefs, setLocal] = useState(getPrefs());
   const [proxy, setProxy] = useState(prefs.proxy);
   const [msg, setMsg] = useState<string | null>(null);
+  // AI 区域默认隐藏：点击底部的入口后才展开
+  const [aiOpen, setAiOpen] = useState(isAiRevealed());
+  const [aiCfg, setAiCfg] = useState(getAiConfig());
+  const [aiKey, setAiKey] = useState('');
+  const [aiKeyMode, setAiKeyMode] = useState<AiKeyMode>('device');
+  const [aiHasKey, setAiHasKey] = useState(false);
+  useEffect(() => {
+    if (aiOpen) void hasAiKey(idb).then(setAiHasKey);
+  }, [aiOpen]);
+
+  const saveAi = async () => {
+    const base = aiCfg.baseUrl.trim();
+    if (base && !/^https?:\/\//.test(base)) return setMsg(tr('服务地址必须以 http(s):// 开头'));
+    try {
+      setAiConfig({ baseUrl: base, model: aiCfg.model.trim(), targetLang: aiCfg.targetLang });
+      if (aiKey.trim()) {
+        await saveAiKey(idb, aiKey, aiKeyMode);
+        setAiKey('');
+        setAiHasKey(true);
+      }
+      notifyAiChanged();
+      setMsg(tr('已保存'));
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const removeAiKey = async () => {
+    await clearAiKey(idb);
+    setAiHasKey(false);
+    notifyAiChanged();
+    setMsg(tr('已清除 API Key'));
+  };
   const update = (patch: Partial<ReturnType<typeof getPrefs>>) => {
     setPrefs(patch);
     setLocal(getPrefs());
@@ -199,6 +235,58 @@ export function Settings({ store, session, onClose, onSignOut }: {
             </div>
           </div>
         </section>
+
+        {!aiOpen ? (
+          <div class="set-reveal">
+            <button class="ghost small" onClick={() => { revealAi(); setAiOpen(true); }}>{tr('高级')}</button>
+          </div>
+        ) : (
+          <section class="group">
+            <h3 class="group-title">{tr('AI 翻译')}</h3>
+            <div class="set">
+              <label class="set-label" for="ai-base">{tr('服务地址')}</label>
+              <div class="set-control">
+                <input id="ai-base" value={aiCfg.baseUrl} placeholder="https://api.openai.com/v1" autoComplete="off" spellcheck={false} onInput={(e) => setAiCfg({ ...aiCfg, baseUrl: (e.target as HTMLInputElement).value })} />
+              </div>
+            </div>
+            <div class="set">
+              <label class="set-label" for="ai-model">{tr('模型')}</label>
+              <div class="set-control">
+                <input id="ai-model" value={aiCfg.model} placeholder="gpt-4o-mini" autoComplete="off" spellcheck={false} onInput={(e) => setAiCfg({ ...aiCfg, model: (e.target as HTMLInputElement).value })} />
+              </div>
+            </div>
+            <div class="set">
+              <label class="set-label" for="ai-lang">{tr('目标语言')}</label>
+              <div class="set-control">
+                <select id="ai-lang" class="set-select" value={aiCfg.targetLang} onChange={(e) => setAiCfg({ ...aiCfg, targetLang: (e.target as HTMLSelectElement).value })}>
+                  <option value="auto">{tr('跟随界面语言')}</option>
+                  {TARGET_LANGS.map((l) => <option value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div class="set">
+              <label class="set-label" for="ai-key">API Key</label>
+              <div class="set-control">
+                <input id="ai-key" type="password" value={aiKey} autoComplete="new-password" spellcheck={false} placeholder={aiHasKey ? tr('已保存，输入新值可替换') : 'sk-…'} onInput={(e) => setAiKey((e.target as HTMLInputElement).value)} />
+              </div>
+            </div>
+            <div class="set">
+              <span class="set-label">{tr('保存方式')}</span>
+              <div class="set-control">
+                <label class="radio"><input type="radio" name="ai-mode" checked={aiKeyMode === 'device'} onChange={() => setAiKeyMode('device')} />{tr('记住在本设备（加密）')}</label>
+                <label class="radio"><input type="radio" name="ai-mode" checked={aiKeyMode === 'session'} onChange={() => setAiKeyMode('session')} />{tr('仅本次会话')}</label>
+              </div>
+            </div>
+            <div class="set">
+              <span class="set-label" />
+              <div class="set-control">
+                <button class="small" onClick={saveAi}>{tr('保存')}</button>
+                {aiHasKey && <button class="ghost small danger" onClick={removeAiKey}>{tr('清除 API Key')}</button>}
+              </div>
+            </div>
+            <p class="set-hint">{tr('配置好后，阅读页面会出现“翻译”按钮。论文文本会发送到你配置的服务；API Key 只保存在本设备，不会写入 GitHub 仓库。')}</p>
+          </section>
+        )}
 
         {msg && <p class="set-hint set-msg">{msg}</p>}
       </div>
