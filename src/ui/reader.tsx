@@ -11,7 +11,7 @@ import { loadPdf, importLocalPdf, PdfLoadError } from '../core/pdfsource';
 import { cacheKey } from '../core/pdfcache';
 import { idb, pdfCache } from '../core/services';
 import { AI_CHANGED_EVENT, getAiConfig, hasAiKey, loadAiKey, resolveTargetLang } from '../core/ai';
-import { loadPageTranslation, translatePaper, type TransBlock } from '../core/translate';
+import { clearPaperTranslation, loadPageTranslation, translatePaper, type TransBlock } from '../core/translate';
 import { getPrefs, setPrefs, subscribePrefs } from '../core/prefs';
 import { guessMeta, type TextItem } from '../core/titleguess';
 import type { PaperStore } from '../core/store';
@@ -1011,6 +1011,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     return () => window.removeEventListener(AI_CHANGED_EVENT, checkAi);
   }, [paperId]);
 
+  // 离开阅读页时停止翻译（已完成的页面都已缓存，之后可以继续）
+  useEffect(() => () => transAbort.current?.abort(), [paperId]);
+
   // 打开论文时读取本地缓存的译文（按当前目标语言）
   const loadedPdf = load.kind === 'ready' ? load.loaded.pdf : null;
   useEffect(() => {
@@ -1032,7 +1035,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   }, [loadedPdf, doc.id, doc.version]);
 
   const startTranslate = async () => {
-    if (!loadedPdf) return;
+    if (!loadedPdf || transAbort.current) return;
     const cfg = getAiConfig();
     const key = await loadAiKey(idb);
     if (!key) return setTransErr(tr('尚未设置 API Key'));
@@ -1040,9 +1043,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     const ctrl = new AbortController();
     transAbort.current = ctrl;
     setShowTrans(true);
-    setTransJob({ done: 0, total: loadedPdf.numPages });
+    setTransJob({ done: Object.keys(trans).length, total: loadedPdf.numPages });
     try {
-      await translatePaper({
+      const res = await translatePaper({
         pdf: loadedPdf,
         idb,
         paperId: doc.id,
@@ -1050,9 +1053,14 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         cfg,
         apiKey: key,
         signal: ctrl.signal,
+        title: displayTitle(doc),
+        startPage: currentPage,
         onPage: (n, blocks) => setTrans((m) => ({ ...m, [n]: blocks })),
         onProgress: (done, total) => setTransJob({ done, total }),
       });
+      if (res.failed.length) {
+        setTransErr(tr('{n} 页翻译失败，可点“继续翻译”重试', { n: res.failed.length }) + (res.lastError ? `：${res.lastError}` : ''));
+      }
     } catch (e) {
       if (!(e instanceof DOMException && e.name === 'AbortError')) setTransErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1060,7 +1068,23 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       setTransJob(null);
     }
   };
-  const hasTrans = Object.keys(trans).length > 0;
+
+  const retranslate = async () => {
+    if (!loadedPdf || transAbort.current) return;
+    const ok = await askConfirm({
+      title: tr('重新翻译这篇论文？'),
+      message: tr('已有译文会被删除，然后重新调用 AI 翻译整篇论文。'),
+      confirmLabel: tr('重新翻译'),
+    });
+    if (!ok) return;
+    await clearPaperTranslation(idb, doc.id, doc.version, resolveTargetLang(getAiConfig()), loadedPdf.numPages);
+    setTrans({});
+    // 等状态清空后再开始，避免进度从旧数值起算
+    setTimeout(() => void startTranslate(), 0);
+  };
+  const transPages = Object.keys(trans).length;
+  const hasTrans = transPages > 0;
+  const transComplete = !!loadedPdf && transPages >= loadedPdf.numPages;
 
   const anns = liveAnnotations(doc).sort((a, b) => a.page - b.page || a.start - b.start);
   const shapes = liveShapes(doc).sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
@@ -1090,12 +1114,21 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
               <button class="ghost small" onClick={() => transAbort.current?.abort()} title={tr('停止翻译')}>
                 {tr('翻译中 {done}/{total}', { done: transJob.done, total: transJob.total })}
               </button>
-            ) : hasTrans ? (
-              <button class="ghost small" onClick={() => setShowTrans((v) => !v)} title={tr('切换译文与原文')}>
-                {showTrans ? tr('查看原文') : tr('查看译文')}
-              </button>
             ) : (
-              <button class="ghost small" onClick={() => void startTranslate()} title={tr('用 AI 翻译整篇论文')}>{tr('翻译')}</button>
+              <>
+                {hasTrans && (
+                  <button class="ghost small" onClick={() => setShowTrans((v) => !v)} title={tr('切换译文与原文')}>
+                    {showTrans ? tr('查看原文') : tr('查看译文')}
+                  </button>
+                )}
+                {!transComplete ? (
+                  <button class="ghost small" onClick={() => void startTranslate()} title={hasTrans ? tr('翻译剩余的页面') : tr('用 AI 翻译整篇论文')}>
+                    {hasTrans ? tr('继续翻译 {done}/{total}', { done: transPages, total: loadedPdf?.numPages ?? 0 }) : tr('翻译')}
+                  </button>
+                ) : (
+                  <button class="ghost small" onClick={() => void retranslate()} title={tr('删除译文并重新翻译')}>{tr('重译')}</button>
+                )}
+              </>
             )
           ) : null
         }

@@ -47,23 +47,39 @@ export function drawTranslation(ctx: CanvasRenderingContext2D, blocks: TransBloc
   }
 }
 
-/** 取块外圈像素中出现最多的颜色（量化后统计），作为覆盖颜色。 */
+/**
+ * 取块外圈像素中出现最多的颜色作为覆盖色。
+ *
+ * pdf.js 总是先把页面铺成白色，所以正常情况下论文纸面就是白色；只有确实是一大片均匀色块
+ * （例如带底色的算法框）时才采用取到的颜色。读不到像素、像素透明（部分浏览器的防指纹策略
+ * 或画布内存不足时会返回全 0），或者取到的颜色混杂（外圈压到了文字）时，一律回退为白色，
+ * 避免出现原文是白底、译文却变成黑底白字的情况。
+ */
 function backgroundOf(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): string {
+  const WHITE = 'rgb(255, 255, 255)';
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
   const x0 = Math.max(0, x - 1);
   const y0 = Math.max(0, y - 1);
   const x1 = Math.min(cw, x + w + 1);
   const y1 = Math.min(ch, y + h + 1);
-  if (x1 <= x0 || y1 <= y0) return '#ffffff';
-  const img = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+  if (x1 <= x0 || y1 <= y0) return WHITE;
+  let img: Uint8ClampedArray;
+  try {
+    img = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+  } catch {
+    return WHITE;
+  }
   const counts = new Map<number, number>();
   const cols = x1 - x0;
   const rows = y1 - y0;
+  let total = 0;
   const push = (px: number, py: number) => {
     const i = (py * cols + px) * 4;
+    if (img[i + 3] < 250) return; // 透明像素说明读回失败，不计入
     const key = ((img[i] >> 4) << 8) | ((img[i + 1] >> 4) << 4) | (img[i + 2] >> 4);
     counts.set(key, (counts.get(key) ?? 0) + 1);
+    total++;
   };
   for (let px = 0; px < cols; px++) {
     push(px, 0);
@@ -73,6 +89,7 @@ function backgroundOf(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
     push(0, py);
     push(cols - 1, py);
   }
+  if (total < 8) return WHITE;
   let best = 0;
   let bestN = -1;
   for (const [k, n] of counts) {
@@ -84,7 +101,10 @@ function backgroundOf(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
   const r = ((best >> 8) & 15) * 17;
   const g = ((best >> 4) & 15) * 17;
   const bl = (best & 15) * 17;
-  return `rgb(${r}, ${g}, ${bl})`;
+  const color = `rgb(${r}, ${g}, ${bl})`;
+  // 深色底只在外圈几乎全是同一颜色时才可信；否则多半是压到了文字或读回异常
+  if (luminance(color) < 0.6 && bestN < total * 0.85) return WHITE;
+  return color;
 }
 
 function luminance(css: string): number {

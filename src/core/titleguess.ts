@@ -68,14 +68,25 @@ const ABSTRACT = /^(abstract|摘要)\b/i;
 // 单位、邮箱等信息出现即说明作者区已结束
 const AFFILIATION = /@|university|institute|department|laborator|school of|college|大学|研究院|研究所|学院|实验室/i;
 
-/** 作者行清理：去掉脚注符号与上标数字，统一逗号间距。 */
-function cleanAuthors(t: string): string {
+/**
+ * 作者行清理：去掉脚注符号、上标数字/字母编号（如 "Alice Smith1,2"、"Bob Lee 2,3∗"、"Carol Wang a,b"），
+ * 统一逗号间距。
+ */
+export function cleanAuthors(t: string): string {
   return t
-    .replace(/[∗*†‡§¶✉]/g, '')
-    .replace(/(?<=[A-Za-zÀ-ɏ一-鿿])\d+(?=[,\s]|$)/g, '')
-    .replace(/\s*,\s*/g, ', ')
+    // 编号与符号出现在名字之间，本身就是分隔，所以替换为逗号而不是删除
+    .replace(/[∗*†‡§¶✉♠♣♥♦⋆★☆#♮♯♭‖]/g, ',')
+    // 紧跟在名字后的上标编号：Smith1,2 / Smith1, 2 / Smith1-3
+    .replace(/(?<=[\p{L}.])\d+(?:\s*[,–-]\s*\d+)*(?=[\s,;]|$)/gu, ',')
+    // 单独成段的编号：", 2, 3 ," 或 " 1 "
+    .replace(/(^|[\s,;])\d+(?:\s*[,–-]\s*\d+)*(?=[\s,;]|$)/g, '$1,')
+    // 单独的上标字母编号（a,b / a）：只在逗号或空白之间的单个小写字母
+    .replace(/(?<=[\s,])[a-z](?:\s*,\s*[a-z])*(?=[\s,;]|$)/g, ',')
+    .replace(/\s+(and|&)\s+/gi, ', ')
+    .replace(/\s*[,;]\s*/g, ', ')
+    .replace(/(,\s*)+/g, ', ')
     .replace(/\s+/g, ' ')
-    .replace(/[,\s]+$/, '')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
     .trim();
 }
 
@@ -101,10 +112,16 @@ function authorLineText(parts: Cand[]): string {
 function guessAuthors(cand: Cand[], titleBottom: number, titleSize: number, pageHeight: number): string {
   // 标题下方的文字，字号必须小于标题
   const below = cand.filter((c) => c.y < titleBottom - 1 && c.y > titleBottom - pageHeight * 0.3 && c.size < titleSize * 0.9);
+  // 作者名的字号：标题下方一小段区域内最大的字号。明显更小的文字是上标编号或脚注，先剔除，
+  // 否则 "Alice Smith¹'²" 的上标会并入名字，或者自成一行被当作作者
+  const near = below.filter((c) => c.y > titleBottom - pageHeight * 0.12);
+  const nameSize = Math.max(0, ...near.map((c) => c.size));
+  const body = below.filter((c) => c.size >= nameSize * 0.8);
   const names: string[] = [];
-  for (const line of groupLines(below)) {
+  for (const line of groupLines(body)) {
     const t = authorLineText(line.parts);
     if (ABSTRACT.test(t) || AFFILIATION.test(t) || t.length > 160) break;
+    if (!/\p{L}{2}/u.test(t)) continue;
     names.push(t.replace(/[,\s]+$/, ''));
     if (names.length >= 2) break;
   }
