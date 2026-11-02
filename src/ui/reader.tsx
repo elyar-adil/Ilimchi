@@ -26,6 +26,11 @@ import { EditableText, TagEditor } from './fields';
 import { TEXT_SIDE_PX, type HlPatch } from './pdfpage';
 import { PdfPage, type DraftText } from './pdfpage';
 import { TopBar, FloatingTools, type Tool } from './toolbar';
+import { Reflow, type ReflowSelection } from './reflow';
+import type { TransMarkSpan } from './translayer';
+import { pageLayout } from '../pdf/layoutcache';
+import { rangesInBlock, transByBlock } from '../core/reflowmap';
+import { aiAlign, alignCacheKey, heuristicAlign, loadAligned, saveAligned, type AlignReq, type Span } from '../core/hlalign';
 import { Icon } from './icons';
 import { askConfirm } from './confirm';
 import 'pdfjs-dist/web/pdf_viewer.css';
@@ -162,6 +167,14 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const [transJob, setTransJob] = useState<{ done: number; total: number } | null>(null);
   const [transErr, setTransErr] = useState<string | null>(null);
   const transAbort = useRef<AbortController | null>(null);
+  // 译文中的高亮位置：页码 → { 译文块序号 k → 区间, 版面块序号 → 区间 }
+  const [transMarks, setTransMarks] = useState<Record<number, { byK: Map<number, TransMarkSpan[]>; byBlock: Map<number, TransMarkSpan[]> }>>({});
+  const [alignTick, setAlignTick] = useState(0);
+  const alignTried = useRef(new Set<string>());
+  // 重排视图
+  const reflow = prefs.view === 'reflow';
+  const [rfJump, setRfJump] = useState<{ page: number; id: string | null; seq: number } | null>(null);
+  const [rfHl, setRfHl] = useState<{ id: string; x: number; y: number } | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
   const toolRef = useRef(tool);
@@ -826,6 +839,43 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     [],
   );
 
+  // 重排视图中的阅读位置：同样写入进度（页 + 页内位置），切回原版时可以接着读
+  const onReflowPage = (page: number, offset: number) => {
+    setCurrentPage(page);
+    if (progressTimer.current) clearTimeout(progressTimer.current);
+    progressTimer.current = setTimeout(() => {
+      void store.mutate(paperId, (d) => setProgress(d, { page, pages: docRef.current.progress.pages || page, offset: round3(offset) }), { lowPriority: true });
+    }, 1500);
+  };
+
+  const onReflowSelect = (sel: ReflowSelection | null) => {
+    if (!sel) {
+      setPending((p) => (p?.approx ? null : p));
+      return;
+    }
+    setRfHl(null);
+    setPending({ ...sel, pageEl: document.body, layer: document.body, approx: true });
+  };
+
+  // 切换视图：回到当前页
+  const toggleView = () => {
+    setPending(null);
+    setRfHl(null);
+    window.getSelection()?.removeAllRanges();
+    setTool('select');
+    setPrefs({ view: reflow ? 'pdf' : 'reflow' });
+  };
+  useEffect(() => {
+    if (reflow || load.kind !== 'ready') return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const idx = Math.max(0, Math.min(currentPage, layout.tops.length) - 1);
+    requestAnimationFrame(() => {
+      el.scrollTop = Math.max(0, (layout.tops[idx] ?? 0) + docRef.current.progress.offset * (layout.heights[idx] ?? 0) - el.clientHeight * 0.25);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reflow]);
+
   // ---------- 选择 → 高亮 / 批注 ----------
   const onMouseUp = () => {
     if (tool !== 'select') return;
@@ -876,7 +926,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       start: pending.start,
       rects: pending.rects,
       note: '',
-      fingerprint: load.loaded.fp,
+      // 重排视图中的矩形是估算值：留空指纹，原版页面渲染时会按文本层重新精确定位
+      fingerprint: pending.approx ? '' : load.loaded.fp,
       version: docRef.current.version,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -924,6 +975,11 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   };
 
   const jumpTo = (page: number, yRatio: number, id: string | null) => {
+    if (reflow) {
+      setRfJump((j) => ({ page, id, seq: (j?.seq ?? 0) + 1 }));
+      setFocusId(id);
+      return;
+    }
     const el = scrollRef.current;
     if (!el || load.kind !== 'ready') return;
     const idx = page - 1;
@@ -1034,6 +1090,76 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     };
   }, [loadedPdf, doc.id, doc.version]);
 
+  // ---------- 译文中的高亮位置 ----------
+  // 先用启发式立即给出位置；配置了 AI 时再请模型精确对齐（结果缓存在本机）
+  const annsKey = liveAnnotations(doc).map((a) => `${a.id}:${a.updatedAt}`).join('|');
+  useEffect(() => {
+    if (!loadedPdf || !showTrans || !Object.keys(trans).length) {
+      setTransMarks({});
+      return;
+    }
+    let cancelled = false;
+    const all = liveAnnotations(docRef.current);
+    const lang = resolveTargetLang(getAiConfig());
+    void (async () => {
+      const result: Record<number, { byK: Map<number, TransMarkSpan[]>; byBlock: Map<number, TransMarkSpan[]> }> = {};
+      const reqs: AlignReq[] = [];
+      for (const [pg, tbs] of Object.entries(trans)) {
+        const n = Number(pg);
+        const pageAnns = all.filter((a) => a.page === n);
+        if (!pageAnns.length || !tbs.length) continue;
+        const layout = await pageLayout(loadedPdf, n);
+        if (cancelled) return;
+        const tmap = transByBlock(layout, tbs);
+        const pm = { byK: new Map<number, TransMarkSpan[]>(), byBlock: new Map<number, TransMarkSpan[]>() };
+        for (const a of pageAnns) {
+          const m = locateQuote(layout.raw, { quote: a.quote, prefix: a.prefix, suffix: a.suffix, start: a.start });
+          if (!m) continue;
+          for (const [i, { tb, k }] of tmap) {
+            const rs = rangesInBlock(layout.blocks[i], m.start, m.end);
+            if (!rs.length) continue;
+            const src = layout.blocks[i].text;
+            const cs = rs[0][0];
+            const ce = rs[rs.length - 1][1];
+            const key = alignCacheKey(doc.id, doc.version, lang, n, i, cs, ce, tb.t);
+            let span: Span | null = await loadAligned(idb, key);
+            if (cancelled) return;
+            if (!span) {
+              span = heuristicAlign(src, cs, ce, tb.t);
+              if (aiReady && !alignTried.current.has(key)) reqs.push({ key, src, cs, ce, tr: tb.t });
+            }
+            const mark = { id: a.id, ts: span.ts, te: span.te };
+            pm.byK.set(k, [...(pm.byK.get(k) ?? []), mark]);
+            pm.byBlock.set(i, [...(pm.byBlock.get(i) ?? []), mark]);
+          }
+        }
+        if (pm.byK.size) result[n] = pm;
+      }
+      if (cancelled) return;
+      setTransMarks(result);
+      if (!reqs.length) return;
+      const key = await loadAiKey(idb);
+      if (!key || cancelled) return;
+      for (const r of reqs) alignTried.current.add(r.key);
+      let changed = false;
+      for (let i = 0; i < reqs.length; i += 8) {
+        try {
+          const got = await aiAlign(getAiConfig(), key, reqs.slice(i, i + 8));
+          for (const [k, span] of got) {
+            await saveAligned(idb, k, span);
+            changed = true;
+          }
+        } catch {
+          /* 对齐失败时保留启发式位置 */
+        }
+      }
+      if (changed && !cancelled) setAlignTick((t) => t + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedPdf, trans, showTrans, annsKey, aiReady, alignTick]);
+
   const startTranslate = async () => {
     if (!loadedPdf || transAbort.current) return;
     const cfg = getAiConfig();
@@ -1097,11 +1223,13 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         title={displayTitle(doc)}
         page={currentPage}
         pages={pageCount}
-        zoomLabel={zoom === 1 ? tr('适宽') : `${Math.round(zoom * 100)}%`}
+        zoomLabel={reflow ? `${prefs.reflowFont}` : zoom === 1 ? tr('适宽') : `${Math.round(zoom * 100)}%`}
         onBack={() => navigate('')}
-        onZoomIn={() => zoomCenter(zoomRef.current * 1.25)}
-        onZoomOut={() => zoomCenter(zoomRef.current / 1.25)}
-        onFit={() => zoomCenter(1)}
+        onZoomIn={() => (reflow ? setPrefs({ reflowFont: Math.min(30, prefs.reflowFont + 1) }) : zoomCenter(zoomRef.current * 1.25))}
+        onZoomOut={() => (reflow ? setPrefs({ reflowFont: Math.max(12, prefs.reflowFont - 1) }) : zoomCenter(zoomRef.current / 1.25))}
+        onFit={() => (reflow ? setPrefs({ reflowFont: 18 }) : zoomCenter(1))}
+        reflow={reflow}
+        onToggleView={toggleView}
         sidebarOpen={showSide}
         onToggleSide={() => {
           setShowSide((s) => !s);
@@ -1153,8 +1281,31 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
 
       <div class="body">
         <div class="stage">
+        {reflow && loaded && (
+          <Reflow
+            pdf={loaded.pdf}
+            pages={loaded.pdf.numPages}
+            anns={anns}
+            trans={trans}
+            showTrans={showTrans}
+            marks={Object.fromEntries(Object.entries(transMarks).map(([k, v]) => [k, v.byBlock]))}
+            focusId={focusId}
+            fontSize={prefs.reflowFont}
+            lang={resolveTargetLang(getAiConfig())}
+            startPage={currentPage === 1 ? doc.progress.page || 1 : currentPage}
+            jump={rfJump}
+            onPage={onReflowPage}
+            onSelect={onReflowSelect}
+            onTapHl={(id, x, top, bottom) => {
+              setPending(null);
+              setFocusId(id);
+              setRfHl({ id, x, y: bottom + 120 < window.innerHeight ? bottom + 8 : Math.max(8, top - 112) });
+            }}
+          />
+        )}
         <div
           class="viewer"
+          style={reflow && loaded ? { display: 'none' } : undefined}
           ref={scrollRef}
           onScroll={onScroll}
           onMouseUp={onMouseUp}
@@ -1201,6 +1352,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
                   sideRoom={sideRoom}
                   ink={inkOn}
                   trans={showTrans ? trans[i + 1] ?? null : null}
+                  transMarks={showTrans ? transMarks[i + 1]?.byK ?? null : null}
                   anns={anns.filter((a) => a.page === i + 1)}
                   shapes={shapes.filter((s) => s.page === i + 1)}
                   unanchored={unanchored}
@@ -1229,7 +1381,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           )}
 
         </div>
-        <FloatingTools
+        {!reflow && <FloatingTools
           tool={tool}
           onTool={setTool}
           color={tool === 'marker' ? prefs.markerColor : prefs.penColor}
@@ -1239,7 +1391,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           onUndo={undo}
           onRedo={redo}
           onColor={(c: InkColor) => setPrefs(tool === 'marker' ? { markerColor: c } : { penColor: c })}
-        />
+        />}
         </div>
 
         {showSide && (
@@ -1313,6 +1465,27 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           <button class="ghost small on-dark" onClick={() => createHighlight(prefs.color, true)}>{tr('批注')}</button>
         </div>
       )}
+      {rfHl && reflow && (() => {
+        const a = anns.find((x) => x.id === rfHl.id);
+        if (!a) return null;
+        return (
+          <div
+            class="selection-bar"
+            style={{
+              top: `${rfHl.y}px`,
+              left: `${Math.max(Math.min(200, window.innerWidth / 2), Math.min(window.innerWidth - Math.min(200, window.innerWidth / 2), rfHl.x))}px`,
+            }}
+          >
+            {HIGHLIGHT_COLORS.map((c) => (
+              <button class={`swatch ${c}${a.color === c ? ' on' : ''}`} title={colorName(c)} aria-label={colorName(c)} onClick={() => void edit((d) => updateAnnotation(d, a.id, { color: c }))} />
+            ))}
+            <span class="sel-sep" />
+            <button class="ghost small on-dark" onClick={() => { setNoteDraft(a.id); setShowSide(true); setRfHl(null); }}>{tr('批注')}</button>
+            <button class="ghost small on-dark" onClick={() => { setRfHl(null); void deleteHl(a.id); }}>{tr('删除')}</button>
+            <button class="ghost small on-dark" onClick={() => setRfHl(null)} aria-label={tr('关闭')}>×</button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

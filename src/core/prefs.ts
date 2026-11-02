@@ -54,6 +54,10 @@ export interface Prefs {
   proxy: string;
   color: HighlightColor;
   sidebar: boolean;
+  /** 阅读视图：原版 PDF / 重排（手机上更易读） */
+  view: 'pdf' | 'reflow';
+  /** 重排视图的字号（像素） */
+  reflowFont: number;
   theme: Theme;
   darkStyle: DarkStyle;
   /** 浅色模式下的纸面底色（与 PDF 相乘，文字保持清晰） */
@@ -81,6 +85,8 @@ const DEFAULTS: Prefs = {
   proxy: '',
   color: 'yellow',
   sidebar: true,
+  view: 'pdf',
+  reflowFont: 18,
   theme: 'system',
   darkStyle: 'soft',
   pageTint: '#ffffff',

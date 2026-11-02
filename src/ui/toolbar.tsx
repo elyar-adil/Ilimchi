@@ -25,6 +25,9 @@ interface TopProps {
   sidebarOpen: boolean;
   onToggleSide: () => void;
   onOpenSettings: () => void;
+  /** 是否处于重排视图 */
+  reflow: boolean;
+  onToggleView: () => void;
   /** AI 功能入口（仅在配置好 AI 后出现） */
   ai?: ComponentChildren;
 }
@@ -39,10 +42,13 @@ export function TopBar(p: TopProps) {
       <div class="topbar-title" title={p.title}>{p.title}</div>
       <div class="grow" />
       {p.pages > 0 && <span class="pager">{p.page} / {p.pages}</span>}
-      <div class="segmented" role="group" aria-label={tr('缩放')}>
-        <button onClick={p.onZoomOut} title={tr('缩小')} aria-label={tr('缩小')}><Icon name="minus" size={14} /></button>
-        <button onClick={p.onFit} title={tr('适应宽度')} class="seg-label">{p.zoomLabel}</button>
-        <button onClick={p.onZoomIn} title={tr('放大')} aria-label={tr('放大')}><Icon name="plus" size={14} /></button>
+      <button class={`icon-btn ${p.reflow ? 'on' : ''}`} onClick={p.onToggleView} title={p.reflow ? tr('原版') : tr('重排')} aria-label={tr('切换重排视图')} aria-pressed={p.reflow}>
+        <Icon name="reflow" />
+      </button>
+      <div class="segmented" role="group" aria-label={p.reflow ? tr('字号') : tr('缩放')}>
+        <button onClick={p.onZoomOut} title={p.reflow ? tr('字号减小') : tr('缩小')} aria-label={p.reflow ? tr('字号减小') : tr('缩小')}><Icon name="minus" size={14} /></button>
+        <button onClick={p.onFit} title={p.reflow ? tr('默认字号') : tr('适应宽度')} class="seg-label">{p.zoomLabel}</button>
+        <button onClick={p.onZoomIn} title={p.reflow ? tr('字号增大') : tr('放大')} aria-label={p.reflow ? tr('字号增大') : tr('放大')}><Icon name="plus" size={14} /></button>
       </div>
       <button class={`icon-btn ${p.sidebarOpen ? 'on' : ''}`} onClick={p.onToggleSide} title={tr('笔记')} aria-label={tr('显示或隐藏笔记')}>
         <Icon name="sidebar" />

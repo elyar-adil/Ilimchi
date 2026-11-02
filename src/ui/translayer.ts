@@ -20,14 +20,30 @@ const MAX_STRETCH = 0.35;
 /** 每个间隙最多压缩的量：下一段只差一点放不下时，略微挤紧本行而不是整段换到下一行 */
 const MAX_SQUEEZE = 0.08;
 
-/** k = 页面缩放 × 设备像素比（块坐标为 scale=1 的 CSS 像素） */
-export function drawTranslation(ctx: CanvasRenderingContext2D, blocks: TransBlock[], k: number): void {
-  for (const b of blocks) {
+/** 译文中需要显示高亮的区间（对应译文块在 blocks 数组中的序号 k） */
+export interface TransMarkSpan {
+  id: string;
+  ts: number;
+  te: number;
+}
+
+/**
+ * k = 页面缩放 × 设备像素比（块坐标为 scale=1 的 CSS 像素）。
+ * marks：译文块序号 → 需要高亮的译文区间；返回每个高亮在画布上的矩形（画布像素）。
+ */
+export function drawTranslation(
+  ctx: CanvasRenderingContext2D,
+  blocks: TransBlock[],
+  k: number,
+  marks?: Map<number, TransMarkSpan[]>,
+): Map<string, { x: number; y: number; w: number; h: number }[]> {
+  const hits = new Map<string, { x: number; y: number; w: number; h: number }[]>();
+  blocks.forEach((b, bi) => {
     const x = Math.floor((b.x - PAD) * k);
     const y = Math.floor((b.y - PAD) * k);
     const w = Math.ceil((b.w + PAD * 2) * k);
     const h = Math.ceil((b.h + PAD * 2) * k);
-    if (w <= 0 || h <= 0) continue;
+    if (w <= 0 || h <= 0) return;
     const bg = backgroundOf(ctx, x, y, w, h);
     ctx.fillStyle = bg;
     ctx.fillRect(x, y, w, h);
@@ -38,13 +54,13 @@ export function drawTranslation(ctx: CanvasRenderingContext2D, blocks: TransBloc
     const startSize = b.size * k;
     // 沿用原文行距：字号缩小时行距按比例缩小，但不小于字号的 1.15 倍
     const pitch = (b.lh && b.lh > b.size ? b.lh : b.size * 1.25) * k;
-    const tokens = tokenize(b.t);
+    const { toks, offs } = tokenize(b.t);
     let size = startSize;
     let lines: Line[] = [];
     let lh = pitch;
     for (; size >= startSize * 0.55; size -= 0.5) {
       ctx.font = `${size}px ${FONT_STACK}`;
-      lines = wrap(ctx, tokens, maxW, size);
+      lines = wrap(ctx, toks, maxW, size);
       lh = Math.max(pitch * (size / startSize), size * 1.15);
       if ((lines.length - 1) * lh + size <= maxH + 1) break;
     }
@@ -53,23 +69,53 @@ export function drawTranslation(ctx: CanvasRenderingContext2D, blocks: TransBloc
     ctx.textBaseline = 'top';
     // 旧缓存没有对齐信息：多行按两端对齐（论文正文最常见）
     const align = b.al ?? (b.h > b.size * 2 ? 'justify' : 'left');
-    lines.forEach((line, i) => drawLine(ctx, line, b.x * k, b.y * k + i * lh, maxW, size, align, i === lines.length - 1));
-  }
+    const spans = marks?.get(bi) ?? [];
+    lines.forEach((line, i) => {
+      const ly = b.y * k + i * lh;
+      const xs = drawLine(ctx, line, toks, b.x * k, ly, maxW, size, align, i === lines.length - 1);
+      // 高亮：按字符位置求出本行内的横向范围
+      for (const m of spans) {
+        let x0 = Infinity;
+        let x1 = -Infinity;
+        line.idx.forEach((ti, j) => {
+          const tok = toks[ti].trimEnd();
+          const o = offs[ti];
+          const a = Math.max(m.ts, o);
+          const e = Math.min(m.te, o + tok.length);
+          if (a >= e) return;
+          const left = xs[j] + ctx.measureText(tok.slice(0, a - o)).width;
+          const right = xs[j] + ctx.measureText(tok.slice(0, e - o)).width;
+          x0 = Math.min(x0, left);
+          x1 = Math.max(x1, right);
+        });
+        if (x1 > x0) {
+          const list = hits.get(m.id) ?? [];
+          list.push({ x: x0, y: ly - size * 0.12, w: x1 - x0, h: size * 1.24 });
+          hits.set(m.id, list);
+        }
+      }
+    });
+  });
+  return hits;
 }
 
 interface Line {
-  tokens: string[];
+  /** 本行的断行单位在 toks 中的序号 */
+  idx: number[];
   widths: number[];
   /** 不含行尾空白的宽度 */
   width: number;
 }
 
-function drawLine(ctx: CanvasRenderingContext2D, line: Line, x0: number, y: number, maxW: number, size: number, align: string, last: boolean): void {
-  const { tokens, widths } = line;
+/** 画一行，返回每个断行单位的起始横坐标 */
+function drawLine(ctx: CanvasRenderingContext2D, line: Line, toks: string[], x0: number, y: number, maxW: number, size: number, align: string, last: boolean): number[] {
+  const { widths } = line;
+  const tokens = line.idx.map((i) => toks[i]);
+  const xs: number[] = [];
   // 行尾空白不参与排版
   let n = tokens.length;
   while (n > 0 && !tokens[n - 1].trim()) n--;
-  if (n === 0) return;
+  if (n === 0) return xs;
   const extra = maxW - line.width;
   const gaps = n - 1;
   // 挤紧过的行（extra < 0）无论对齐方式都要按间隙分配，否则会超出右边界
@@ -77,73 +123,78 @@ function drawLine(ctx: CanvasRenderingContext2D, line: Line, x0: number, y: numb
     const add = extra / gaps;
     let x = x0;
     for (let i = 0; i < n; i++) {
+      xs.push(x);
       ctx.fillText(tokens[i].trimEnd(), x, y);
       x += widths[i] + add;
     }
-    return;
+    return xs;
   }
-  const text = tokens.slice(0, n).join('').trimEnd();
   const dx = align === 'center' ? Math.max(0, extra / 2) : 0;
-  ctx.fillText(text, x0 + dx, y, maxW * 1.02);
+  let x = x0 + dx;
+  for (let i = 0; i < n; i++) {
+    xs.push(x);
+    x += widths[i];
+  }
+  ctx.fillText(tokens.slice(0, n).join('').trimEnd(), x0 + dx, y, maxW * 1.02);
+  return xs;
 }
 
-/** 切分断行单位；单独的空白并入前一段，使间隙只出现在段与段之间 */
-function tokenize(text: string): string[] {
-  const raw: string[] = [];
-  for (const t of text.match(TOKEN) ?? []) {
+/** 切分断行单位，并记录每个单位在原字符串中的起始位置；单独的空白并入前一段 */
+function tokenize(text: string): { toks: string[]; offs: number[] } {
+  const raw: { t: string; o: number }[] = [];
+  TOKEN.lastIndex = 0;
+  for (let m = TOKEN.exec(text); m; m = TOKEN.exec(text)) {
+    const t = m[0];
     if (!t.trim()) {
-      if (raw.length) raw[raw.length - 1] += t;
+      if (raw.length) raw[raw.length - 1].t += t;
       continue;
     }
     // 带连字符的长词可以在连字符后断开（closed-loop → closed- / loop）
-    if (/[A-Za-z]-[A-Za-z]/.test(t)) raw.push(...t.split(/(?<=[A-Za-z]-)(?=[A-Za-z])/));
-    else raw.push(t);
+    if (/[A-Za-z]-[A-Za-z]/.test(t)) {
+      let o = m.index;
+      for (const part of t.split(/(?<=[A-Za-z]-)(?=[A-Za-z])/)) {
+        raw.push({ t: part, o });
+        o += part.length;
+      }
+    } else raw.push({ t, o: m.index });
   }
   // 开括号、开引号与后一段绑定，避免落在行尾
-  const out: string[] = [];
-  for (const t of raw) {
-    if (out.length && NO_LINE_END.test(out[out.length - 1])) out[out.length - 1] += t;
-    else out.push(t);
+  const out: { t: string; o: number }[] = [];
+  for (const r of raw) {
+    const last = out[out.length - 1];
+    if (last && NO_LINE_END.test(last.t)) last.t += r.t;
+    else out.push({ ...r });
   }
-  return out;
+  return { toks: out.map((r) => r.t), offs: out.map((r) => r.o) };
 }
 
 /** 贪心换行（按断行单位），遵守避头规则；记录每段宽度供两端对齐使用。 */
 function wrap(ctx: CanvasRenderingContext2D, tokens: string[], maxW: number, size: number): Line[] {
   const lines: Line[] = [];
-  let cur: string[] = [];
+  let cur: number[] = [];
   let ws: number[] = [];
   let width = 0; // 当前行含末尾空白的宽度
-  const trimmedWidth = (toks: string[], wds: number[]) => {
-    if (!toks.length) return 0;
-    const lastTok = toks[toks.length - 1];
-    const tail = lastTok.length - lastTok.trimEnd().length;
-    let w = wds.reduce((a, b) => a + b, 0);
-    if (tail) w -= wds[wds.length - 1] - ctx.measureText(lastTok.trimEnd()).width;
-    return w;
-  };
   const flush = () => {
-    if (cur.length) lines.push({ tokens: cur, widths: ws.map((w, i) => (i === ws.length - 1 ? ctx.measureText(cur[i].trimEnd()).width : w)), width: trimmedWidth(cur, ws) });
+    if (cur.length) {
+      const lastTok = tokens[cur[cur.length - 1]];
+      const lastTrim = ctx.measureText(lastTok.trimEnd()).width;
+      const total = ws.reduce((a, b) => a + b, 0) - ws[ws.length - 1] + lastTrim;
+      lines.push({ idx: cur, widths: ws.map((w, i) => (i === ws.length - 1 ? lastTrim : w)), width: total });
+    }
     cur = [];
     ws = [];
     width = 0;
   };
-  for (const tok of tokens) {
+  tokens.forEach((tok, ti) => {
     const tw = ctx.measureText(tok).width;
     // 允许按间隙数略微挤紧
     const slack = cur.length * size * MAX_SQUEEZE;
     const fits = width + ctx.measureText(tok.trimEnd()).width <= maxW + slack;
-    if (!cur.length || fits || NO_LINE_START.test(tok)) {
-      cur.push(tok);
-      ws.push(tw);
-      width += tw;
-    } else {
-      flush();
-      cur.push(tok);
-      ws.push(tw);
-      width = tw;
-    }
-  }
+    if (cur.length && !fits && !NO_LINE_START.test(tok)) flush();
+    cur.push(ti);
+    ws.push(tw);
+    width += tw;
+  });
   flush();
   return lines;
 }

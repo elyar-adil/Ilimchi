@@ -369,5 +369,15 @@ const EN: Record<string, string> = {
   "配置好后，阅读页面会出现“翻译”按钮。论文文本会发送到你配置的服务；API Key 只保存在本设备，不会写入 GitHub 仓库。": "Once configured, a Translate button appears in the reader. Paper text is sent to the service you configure. The API key is stored only on this device and is never written to the GitHub repository.",
   "已清除 API Key": "API key cleared",
   "高级": "Advanced",
+  "正在重排": "Reflowing",
+  "第 {n} 页无法重排": "Page {n} could not be reflowed",
+  "原版": "Original layout",
+  "重排": "Reflow",
+  "切换重排视图": "Toggle reflow view",
+  "字号": "Text size",
+  "字号减小": "Smaller text",
+  "默认字号": "Default text size",
+  "字号增大": "Larger text",
+  "关闭": "Close",
   "跟随界面语言": "Same as interface language"
 };

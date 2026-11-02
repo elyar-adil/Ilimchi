@@ -1,5 +1,5 @@
 import type { PDFDoc } from '../pdf/engine';
-import { extractBlocks, type TextBlock } from '../pdf/blocks';
+import { extractBlocks, type LayoutBlock as TextBlock } from '../pdf/blocks';
 import { AiHttpError, resolveTargetLang, translateItems, type AiConfig } from './ai';
 import type { Idb } from './idb';
 import { tr } from './i18n';
@@ -15,6 +15,8 @@ export interface TransBlock {
   lh?: number;
   /** 原文对齐方式 */
   al?: 'justify' | 'center' | 'left';
+  /** 对应 PageLayout.blocks 中的序号（旧缓存没有，按位置匹配） */
+  i?: number;
   t: string;
 }
 
@@ -133,7 +135,7 @@ export async function translatePaper(opts: TranslateOpts): Promise<TranslateResu
       blocks.forEach((b, i) => {
         const t = map.get(i);
         // 模型原样返回（作者、单位、文献条目等）时保留原文，不做覆盖
-        if (t && normalize(t) !== normalize(b.text)) out.push({ x: b.x, y: b.y, w: b.w, h: b.h, size: b.size, lh: b.pitch, al: b.align, t });
+        if (t && normalize(t) !== normalize(b.text)) out.push({ x: b.x, y: b.y, w: b.w, h: b.h, size: b.size, lh: b.pitch, al: b.align, i: b.i, t });
       });
       await idb.put('kv', cacheKey(paperId, version, lang, n), { blocks: out });
       opts.onPage(n, out);

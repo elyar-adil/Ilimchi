@@ -6,7 +6,7 @@ import { contextOf, locateQuote, pointInRects } from '../core/anchor';
 import { rawOffsetAtPoint, rawText, readableSlice, rectsForOffsets } from '../pdf/text';
 import type { Tool } from './toolbar';
 import type { TransBlock } from '../core/translate';
-import { drawTranslation } from './translayer';
+import { drawTranslation, type TransMarkSpan } from './translayer';
 
 export interface DraftText {
   page: number;
@@ -83,6 +83,8 @@ interface Props {
   onDeleteHl: (id: string) => void;
   /** 译文块（已翻译时非空）：直接绘制到页面位图上替换原文 */
   trans: TransBlock[] | null;
+  /** 译文中的高亮位置：译文块序号 → 区间 */
+  transMarks: Map<number, TransMarkSpan[]> | null;
 }
 
 /**
@@ -98,6 +100,9 @@ export function PdfPage(props: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
+  /** 显示译文时高亮在译文上的矩形（页面比例坐标） */
+  const [transRects, setTransRects] = useState<Map<string, Rect[]>>(new Map());
+  const transMarks = props.transMarks;
   const [draftInk, setDraftInk] = useState<[number, number][] | null>(null);
   const inkRef = useRef<[number, number][] | null>(null);
   const onRenderedRef = useRef(props.onRendered);
@@ -148,7 +153,14 @@ export function PdfPage(props: Props) {
       canvas.style.height = `${vp.height}px`;
       const cctx = canvas.getContext('2d');
       cctx?.drawImage(off, 0, 0);
-      if (trans && trans.length && cctx) drawTranslation(cctx, trans, scale * dpr);
+      if (trans && trans.length && cctx) {
+        const hits = drawTranslation(cctx, trans, scale * dpr, transMarks ?? undefined);
+        const W = canvas.width;
+        const H = canvas.height;
+        const next = new Map<string, Rect[]>();
+        for (const [id, rs] of hits) next.set(id, rs.map((r) => ({ x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H })));
+        setTransRects(next);
+      } else setTransRects(new Map());
       if (ink && cctx) applyInk(cctx, canvas.width, canvas.height);
       layer.replaceChildren();
       layer.style.setProperty('--total-scale-factor', String(scale));
@@ -166,7 +178,7 @@ export function PdfPage(props: Props) {
       task?.cancel();
       tl?.cancel();
     };
-  }, [visible, scale, pdf, num, ink, trans]);
+  }, [visible, scale, pdf, num, ink, trans, transMarks]);
 
   /** 指针坐标 → 页面比例坐标 */
   const toRatio = (e: PointerEvent | MouseEvent): [number, number] | null => {
@@ -224,7 +236,7 @@ export function PdfPage(props: Props) {
     if (sel && !sel.isCollapsed) return;
     const pt = toRatio(e);
     if (!pt) return;
-    const hit = props.anns.find((a) => pointInRects(a.rects, pt[0], pt[1]));
+    const hit = props.anns.find((a) => pointInRects(rectsShown(a), pt[0], pt[1]));
     props.onSelectHl(hit ? hit.id : null);
   };
 
@@ -273,6 +285,16 @@ export function PdfPage(props: Props) {
     setPreview(null);
   };
 
+  // 显示译文时：落在译文块上的那部分高亮改画在对应的译文上，其余部分保持原位
+  const transBoxes: Rect[] = trans && width > 0 && height > 0
+    ? trans.map((b) => ({ x: (b.x * scale) / width, y: (b.y * scale) / height, w: (b.w * scale) / width, h: (b.h * scale) / height }))
+    : [];
+  const inTrans = (r: Rect) => transBoxes.some((t) => r.x + r.w / 2 >= t.x && r.x + r.w / 2 <= t.x + t.w && r.y + r.h / 2 >= t.y && r.y + r.h / 2 <= t.y + t.h);
+  const rectsShown = (a: Annotation): Rect[] => {
+    if (!transBoxes.length) return a.rects;
+    return [...a.rects.filter((r) => !inTrans(r)), ...(transRects.get(a.id) ?? [])];
+  };
+
   const pageSize = width > 0 ? height / width : 1;
   const inks = props.shapes.filter((s): s is InkShape => s.kind === 'ink');
   const texts = props.shapes.filter((s): s is TextShape => s.kind === 'text');
@@ -289,7 +311,7 @@ export function PdfPage(props: Props) {
       <canvas ref={canvasRef} />
       <div class="hl-layer">
         {props.anns.flatMap((a) =>
-          (preview && preview.id === a.id ? preview.rects : a.rects).map((r, i) => (
+          (preview && preview.id === a.id ? preview.rects : rectsShown(a)).map((r, i) => (
             <div
               key={`${a.id}-${i}`}
               class={`hl ${a.color} ${a.decoration ?? 'highlight'} ${props.focusId === a.id ? 'focus' : ''} ${props.unanchored.has(a.id) ? 'loose' : ''} ${props.selectedId === a.id ? 'selected' : ''}`}

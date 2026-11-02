@@ -195,23 +195,35 @@ export async function translateItems(
   signal?: AbortSignal,
   context = '',
 ): Promise<Map<string, string>> {
-  const base = cfg.baseUrl.trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//.test(base)) throw new Error(tr('服务地址必须以 http(s):// 开头'));
   const lang = resolveTargetLang(cfg);
   const langName = TARGET_LANGS.find((l) => l.id === lang)?.name ?? lang;
   // 批内用短序号作标记，减少 token，也避免模型改写 id
   const input = items.map((it, i) => `[[${i + 1}]]\n${it.text}`).join('\n\n');
+  const content = await chat(cfg, apiKey, systemPrompt(langName, context), input, signal);
+  const byIndex = parseSegments(content);
+  const out = new Map<string, string>();
+  items.forEach((it, i) => {
+    const t = byIndex.get(i + 1);
+    if (t) out.set(it.id, t);
+  });
+  return out;
+}
+
+/** 调用 OpenAI 兼容的 /chat/completions，返回回复文本 */
+export async function chat(cfg: AiConfig, apiKey: string, system: string, user: string, signal?: AbortSignal, temperature = 0.2): Promise<string> {
+  const base = cfg.baseUrl.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) throw new Error(tr('服务地址必须以 http(s):// 开头'));
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: cfg.model,
-      temperature: 0.2,
+      temperature,
       stream: false,
       messages: [
-        { role: 'system', content: systemPrompt(langName, context) },
-        { role: 'user', content: input },
+        { role: 'system', content: system },
+        { role: 'user', content: user },
       ],
     }),
   });
@@ -220,14 +232,7 @@ export async function translateItems(
     throw new AiHttpError(tr('AI 服务返回错误 {status}', { status: res.status }) + (detail ? `: ${detail}` : ''), res.status);
   }
   const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const content = json.choices?.[0]?.message?.content ?? '';
-  const byIndex = parseSegments(content);
-  const out = new Map<string, string>();
-  items.forEach((it, i) => {
-    const t = byIndex.get(i + 1);
-    if (t) out.set(it.id, t);
-  });
-  return out;
+  return json.choices?.[0]?.message?.content ?? '';
 }
 
 /** 解析 "[[n]] 译文" 格式的回复；兼容推理模型输出的 <think> 段。 */

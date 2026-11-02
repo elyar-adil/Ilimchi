@@ -1,4 +1,5 @@
 export type IconName =
+  | 'reflow'
   | 'back' | 'select' | 'text' | 'pen' | 'marker' | 'eraser' | 'sidebar' | 'gear' | 'plus' | 'minus'
   | 'search' | 'library' | 'trash' | 'tag' | 'sun' | 'moon' | 'auto' | 'sync' | 'close'
   | 'check' | 'folder' | 'untag' | 'sort' | 'list' | 'edit' | 'undo' | 'redo';
@@ -25,6 +26,7 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
 
 const PATHS: Record<IconName, preact.JSX.Element> = {
   back: <path d="M15 5l-7 7 7 7" />,
+  reflow: <path d="M5 6h14M5 10h14M5 14h9M5 18h11M17 13.5l2.5 2.5-2.5 2.5" />,
   select: <path d="M6 4l4.6 15.2 2.2-5.9 5.9-2.2z" />,
   text: <path d="M6 6.5V5h12v1.5M12 5v14M9.5 19h5" />,
   pen: <path d="M15.2 5.6l3.2 3.2L9.4 17.8 5 19l1.2-4.4z M13.6 7.2l3.2 3.2" />,
