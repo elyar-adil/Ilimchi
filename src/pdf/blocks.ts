@@ -39,6 +39,8 @@ interface Line {
 }
 
 const CJK = /[぀-ヿ㐀-鿿가-힯]/;
+/** arXiv 自动加上的编号戳，例如 "arXiv:2607.10630v1 [cs.RO] 12 Jul 2026" */
+const ARXIV_STAMP = /^\s*arXiv:\d{4}\.\d{4,5}(v\d+)?\s*\[/;
 
 export async function extractBlocks(page: PDFPage): Promise<TextBlock[]> {
   const vp = page.getViewport({ scale: 1 });
@@ -46,6 +48,10 @@ export async function extractBlocks(page: PDFPage): Promise<TextBlock[]> {
   const pieces: Piece[] = [];
   for (const item of content.items) {
     if (!('str' in item) || !item.str.trim()) continue;
+    // 旋转或倾斜的文字（如 arXiv 左侧竖排的编号水印）不参与替换：按水平排版处理会盖住正文
+    const [a, b, c, d] = item.transform;
+    if (Math.abs(b) > Math.abs(a) * 0.05 || Math.abs(c) > Math.abs(d) * 0.05) continue;
+    if (ARXIV_STAMP.test(item.str)) continue;
     const m = pdfjs.Util.transform(vp.transform, item.transform);
     const size = Math.hypot(m[2], m[3]) || item.height || 10;
     const x0 = m[4];

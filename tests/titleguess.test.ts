@@ -62,3 +62,30 @@ describe('guessMeta 作者', () => {
     expect(guessMeta(items, H).authors).toBe('');
   });
 });
+
+describe('作者上标编号', () => {
+  const H = 842;
+  const title = [{ str: 'A Long Enough Paper Title', transform: [1, 0, 0, 18, 150, 700], height: 18 }];
+
+  it('上标为独立的小字号文字时不并入名字', () => {
+    const items = [
+      ...title,
+      { str: 'Alice Smith', transform: [1, 0, 0, 11, 150, 660], height: 11 },
+      { str: '1,2', transform: [1, 0, 0, 7, 212, 664], height: 7 },
+      { str: 'Bob Lee', transform: [1, 0, 0, 11, 240, 660], height: 11 },
+      { str: '2∗', transform: [1, 0, 0, 7, 282, 664], height: 7 },
+      { str: '1', transform: [1, 0, 0, 7, 150, 646], height: 7 },
+      { str: 'Tsinghua University', transform: [1, 0, 0, 10, 156, 642], height: 10 },
+      { str: 'Abstract', transform: [1, 0, 0, 12, 60, 600], height: 12 },
+    ];
+    expect(guessMeta(items, H).authors).toBe('Alice Smith, Bob Lee');
+  });
+
+  it('清理粘连或分开的编号与符号', async () => {
+    const { cleanAuthors } = await import('../src/core/titleguess');
+    expect(cleanAuthors('Alice Smith1,2, Bob Lee2∗, Carol Wang1')).toBe('Alice Smith, Bob Lee, Carol Wang');
+    expect(cleanAuthors('Alice Smith 1,2 Bob Lee 3† and Carol Wang 1')).toBe('Alice Smith, Bob Lee, Carol Wang');
+    expect(cleanAuthors('Alice Smith a,b, Bob Lee b')).toBe('Alice Smith, Bob Lee');
+    expect(cleanAuthors('Yann LeCun, J. R. R. Tolkien')).toBe('Yann LeCun, J. R. R. Tolkien');
+  });
+});

@@ -141,32 +141,52 @@ export async function clearAiKey(idb: Idb): Promise<void> {
 
 // ---------- 调用 ----------
 
-const SYSTEM_PROMPT = (lang: string) =>
-  [
-    'You are a professional academic translator.',
-    `Translate the "text" of each item into ${lang}. The source is usually English.`,
-    'Keep technical terms, acronyms, model and dataset names, numbers, equations, citation markers such as [12] or (Smith et al., 2020), and URLs unchanged.',
-    'Translate faithfully and concisely. Do not add commentary, notes or explanations.',
-    'Input: {"items":[{"id":"...","text":"..."}]}.',
-    'Reply with JSON only, in the same shape, with the same ids and the translated text.',
-  ].join('\n');
+function systemPrompt(lang: string, context: string): string {
+  const lines = [
+    `You are an expert translator of academic papers. Translate each segment into fluent, natural ${lang}, the way a domain expert would write it in a published paper in that language — not word for word.`,
+    '',
+    'The segments are paragraphs, headings and captions extracted from a PDF, in reading order. Extraction may leave artifacts: words broken by hyphenation, stray footnote markers, superscript digits, or fragments of inline math. Silently repair hyphenation; keep everything else that is not prose exactly as it appears.',
+    '',
+    'Rules:',
+    '- Keep unchanged: math and symbols, variable names, numbers and units, citation markers such as [12] or (Smith et al., 2020), URLs, code, and names of people, models, datasets, benchmarks, methods and software (e.g. Transformer, nuPlan, ResNet-50).',
+    '- Widely used technical terms: use the standard translation in the field. If a term has no settled translation, keep the English term; at its first occurrence you may write the translation followed by the English in parentheses.',
+    '- Use the same translation for the same term in every segment.',
+    '- Headings stay short headings; keep their numbering ("3.2 Method" → "3.2 方法"). Figure/table captions keep their label ("Figure 3:" → "图 3：").',
+    '- An author list, affiliation, e-mail line or bibliography entry is returned unchanged.',
+    '- Never merge, split, drop or reorder segments. Do not add notes or explanations.',
+    '',
+    'Input: segments, each introduced by a marker such as [[3]] on its own line.',
+    'Output: exactly the same markers in the same order, each followed by the translation of that segment. Output nothing else.',
+  ];
+  if (context) lines.push('', 'Context from the paper (for terminology only, do not translate it):', context);
+  return lines.join('\n');
+}
 
 export interface TranslateItem {
   id: string;
   text: string;
 }
 
-/** 翻译一批文本块，返回 id -> 译文。 */
+export class AiHttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+/** 翻译一批文本块，返回 id -> 译文。context 为论文标题与摘要，用于统一术语。 */
 export async function translateItems(
   cfg: AiConfig,
   apiKey: string,
   items: TranslateItem[],
   signal?: AbortSignal,
+  context = '',
 ): Promise<Map<string, string>> {
   const base = cfg.baseUrl.trim().replace(/\/+$/, '');
   if (!/^https?:\/\//.test(base)) throw new Error(tr('服务地址必须以 http(s):// 开头'));
   const lang = resolveTargetLang(cfg);
   const langName = TARGET_LANGS.find((l) => l.id === lang)?.name ?? lang;
+  // 批内用短序号作标记，减少 token，也避免模型改写 id
+  const input = items.map((it, i) => `[[${i + 1}]]\n${it.text}`).join('\n\n');
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     signal,
@@ -174,34 +194,38 @@ export async function translateItems(
     body: JSON.stringify({
       model: cfg.model,
       temperature: 0.2,
+      stream: false,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT(langName) },
-        { role: 'user', content: JSON.stringify({ items }) },
+        { role: 'system', content: systemPrompt(langName, context) },
+        { role: 'user', content: input },
       ],
     }),
   });
   if (!res.ok) {
     const detail = (await res.text().catch(() => '')).slice(0, 200);
-    throw new Error(tr('AI 服务返回错误 {status}', { status: res.status }) + (detail ? `: ${detail}` : ''));
+    throw new AiHttpError(tr('AI 服务返回错误 {status}', { status: res.status }) + (detail ? `: ${detail}` : ''), res.status);
   }
   const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const content = json.choices?.[0]?.message?.content ?? '';
-  return parseItems(content);
+  const byIndex = parseSegments(content);
+  const out = new Map<string, string>();
+  items.forEach((it, i) => {
+    const t = byIndex.get(i + 1);
+    if (t) out.set(it.id, t);
+  });
+  return out;
 }
 
-function parseItems(content: string): Map<string, string> {
-  const start = content.indexOf('{');
-  const end = content.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error(tr('AI 返回的内容不是 JSON'));
-  let parsed: { items?: { id?: unknown; text?: unknown }[] };
-  try {
-    parsed = JSON.parse(content.slice(start, end + 1));
-  } catch {
-    throw new Error(tr('AI 返回的内容不是 JSON'));
-  }
-  const out = new Map<string, string>();
-  for (const it of parsed.items ?? []) {
-    if (typeof it.id === 'string' && typeof it.text === 'string') out.set(it.id, it.text);
-  }
+/** 解析 "[[n]] 译文" 格式的回复；兼容推理模型输出的 <think> 段。 */
+export function parseSegments(content: string): Map<number, string> {
+  const text = content.replace(/<think>[\s\S]*?<\/think>/g, '');
+  const out = new Map<number, string>();
+  const re = /\[\[(\d+)\]\]/g;
+  const marks: { n: number; at: number; end: number }[] = [];
+  for (let m = re.exec(text); m; m = re.exec(text)) marks.push({ n: +m[1], at: m.index, end: m.index + m[0].length });
+  marks.forEach((m, i) => {
+    const seg = text.slice(m.end, i + 1 < marks.length ? marks[i + 1].at : undefined).trim();
+    if (seg && !out.has(m.n)) out.set(m.n, seg);
+  });
   return out;
 }
