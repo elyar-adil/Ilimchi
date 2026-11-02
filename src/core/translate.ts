@@ -24,9 +24,9 @@ const BATCH_CHARS = 2500;
 const CONCURRENCY = 4;
 const MAX_ATTEMPTS = 3;
 
-// v2：分块规则改变（排除 arXiv 竖排编号等），旧缓存不再使用
+// v3：分块与合并规则改变（排除 arXiv 竖排编号、跨栏段落合并），旧缓存不再使用
 function cacheKey(paperId: string, version: string, lang: string, page: number): string {
-  return `ai-tr2:${paperId}:${version}:${lang}:${page}`;
+  return `ai-tr3:${paperId}:${version}:${lang}:${page}`;
 }
 
 export async function loadPageTranslation(idb: Idb, paperId: string, version: string, lang: string, page: number): Promise<TransBlock[] | null> {
@@ -116,14 +116,22 @@ export async function translatePaper(opts: TranslateOpts): Promise<TranslateResu
   const translatePage = async (n: number) => {
     const blocks = pageBlocks.get(n) ?? [];
     const flags = skip.get(n) ?? [];
-    const items = blocks.map((b, i) => ({ id: String(i), text: b.text })).filter((_, i) => !flags[i]);
+    // 跨栏断开的同一段落合并成一个翻译单元，译文再按原文长度比例分回各块
+    const units = joinContinuations(blocks, flags);
+    const items = units.map((u, i) => ({ id: String(i), text: u.text }));
     try {
-      const results = await Promise.all([...batches(items)].map((batch) => run(() => translateBatch(cfg, apiKey, batch, sig, context))));
-      const map = new Map<string, string>();
-      for (const r of results) for (const [id, t] of r) map.set(id, t);
+      const results = await Promise.all([...batches(items)].map((batch) => run(() => translateBatch(cfg, apiKey, batch, sig, context, lang))));
+      const map = new Map<number, string>();
+      for (const r of results) {
+        for (const [id, t] of r) {
+          const u = units[+id];
+          const parts = splitTranslation(t, u.blocks.map((i) => blocks[i].text.length));
+          u.blocks.forEach((bi, k) => map.set(bi, parts[k]));
+        }
+      }
       const out: TransBlock[] = [];
       blocks.forEach((b, i) => {
-        const t = map.get(String(i));
+        const t = map.get(i);
         // 模型原样返回（作者、单位、文献条目等）时保留原文，不做覆盖
         if (t && normalize(t) !== normalize(b.text)) out.push({ x: b.x, y: b.y, w: b.w, h: b.h, size: b.size, lh: b.pitch, al: b.align, t });
       });
@@ -160,8 +168,22 @@ async function translateBatch(
   batch: { id: string; text: string }[],
   signal: AbortSignal,
   context: string,
+  lang: string,
 ): Promise<Map<string, string>> {
   const out = await withRetry(() => translateItems(cfg, apiKey, batch, signal, context), signal);
+  // 带解释、夹带原文或没有译完的段落，单独重译一次；仍不理想则用较好的一次并去掉明显的附注
+  for (const it of batch) {
+    const t = out.get(it.id);
+    if (t === undefined || !looksWrong(t, it.text, lang)) continue;
+    try {
+      const again = (await withRetry(() => translateItems(cfg, apiKey, [it], signal, context), signal)).get(it.id);
+      if (again && !looksWrong(again, it.text, lang)) out.set(it.id, again);
+      else out.set(it.id, stripNotes(again ?? t));
+    } catch (e) {
+      if (isAbort(e)) throw e;
+      out.set(it.id, stripNotes(t));
+    }
+  }
   const missing = batch.filter((it) => !out.has(it.id));
   if (missing.length && missing.length < batch.length) {
     try {
@@ -232,6 +254,101 @@ export function classifyReference(text: string, inRefs: boolean): { skip: boolea
     return { skip: false, inRefs: false };
   }
   return { skip: false, inRefs: false };
+}
+
+interface Unit {
+  blocks: number[];
+  text: string;
+}
+
+const SENTENCE_END = /[.!?:;。！？：；)\]）」”"']\s*$/;
+
+/**
+ * 把阅读顺序上相邻、句子没结束的块（段落跨栏或被图表隔开）合并成一个翻译单元。
+ * 行尾连字符断开的单词（"natural-" + "istic"）直接拼接。
+ */
+export function joinContinuations(blocks: { text: string }[], skip: boolean[]): Unit[] {
+  const units: Unit[] = [];
+  let prev: Unit | null = null;
+  blocks.forEach((b, i) => {
+    if (skip[i]) {
+      prev = null;
+      return;
+    }
+    const t = b.text.trim();
+    const last = prev ? blocks[prev.blocks[prev.blocks.length - 1]].text.trim() : '';
+    const continues = !!prev && !SENTENCE_END.test(last) && /^[a-z(\[,]/.test(t);
+    if (prev && continues) {
+      prev.blocks.push(i);
+      prev.text = /[A-Za-z]-$/.test(prev.text) ? prev.text.slice(0, -1) + t : `${prev.text} ${t}`;
+    } else {
+      prev = { blocks: [i], text: t };
+      units.push(prev);
+    }
+  });
+  return units;
+}
+
+/** 按原文长度比例切分译文；切点挪到最近的标点或空白处，避免把词切断。 */
+export function splitTranslation(t: string, lengths: number[]): string[] {
+  if (lengths.length <= 1) return [t];
+  const total = lengths.reduce((a, b) => a + b, 0) || 1;
+  const parts: string[] = [];
+  let start = 0;
+  let acc = 0;
+  for (let k = 0; k < lengths.length - 1; k++) {
+    acc += lengths[k];
+    const target = Math.round((t.length * acc) / total);
+    const win = Math.max(4, Math.round(t.length * 0.08));
+    let cut = -1;
+    let best = Infinity;
+    for (let p = Math.max(start + 1, target - win); p <= Math.min(t.length - 1, target + win); p++) {
+      const before = t[p - 1];
+      const score = Math.abs(p - target) - (/[，。；：、,.;:]/.test(before) ? win : 0);
+      const insideWord = /[A-Za-z0-9]/.test(before) && /[A-Za-z0-9]/.test(t[p]);
+      if (!insideWord && score < best) {
+        best = score;
+        cut = p;
+      }
+    }
+    if (cut < 0) cut = Math.min(Math.max(target, start), t.length);
+    parts.push(t.slice(start, cut).trim());
+    start = cut;
+  }
+  parts.push(t.slice(start).trim());
+  return parts;
+}
+
+const CJK_LANG = /^(zh|ja|ko)/;
+const NOTE = /(应译|应为|译[文注]?[:：]|注[:：]|原文[:：]|\bTranslation:|\bNote:)/;
+
+/** 译文是否可疑：含解释性附注，或目标语言是中日韩但大段仍是英文 */
+export function looksWrong(t: string, src: string, lang: string): boolean {
+  if (NOTE.test(t) && !NOTE.test(src)) return true;
+  if (CJK_LANG.test(lang)) {
+    // 译文里出现原文中连续 6 个以上的英文单词：有句子被原样照抄、没有翻译
+    const plain = t.replace(/[（(][^（）()]*[）)]/g, ' ');
+    const srcNorm = src.replace(/\s+/g, ' ');
+    for (const m of plain.matchAll(/(?:[A-Za-z][\w'-]*[\s,]+){5,}[A-Za-z][\w'-]*/g)) {
+      if (srcNorm.includes(m[0].replace(/\s+/g, ' '))) return true;
+    }
+    if (src.length > 40 && cjkRatio(t) < 0.2) return true;
+  }
+  return false;
+}
+
+function cjkRatio(t: string): number {
+  const chars = t.replace(/\s/g, '');
+  if (!chars) return 0;
+  return (chars.match(/[぀-ヿ㐀-鿿가-힯]/g) ?? []).length / chars.length;
+}
+
+/** 去掉模型夹带的附注（"——应译……"、"译：" 等） */
+function stripNotes(t: string): string {
+  return t
+    .replace(/\s*[—-]+\s*(应译|应为)[^。！？]*[。！？]?/g, '')
+    .replace(/(^|\s)(译[文]?|Translation)[:：]\s*/g, '$1')
+    .trim();
 }
 
 /** 按字符数切分批次 */
