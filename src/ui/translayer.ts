@@ -8,10 +8,17 @@ import type { TransBlock } from '../core/translate';
  */
 
 const FONT_STACK = '"Source Serif 4", "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", serif';
-const CJK = /[぀-ヿ㐀-鿿가-힯]/;
 const PAD = 1;
 /** 不能出现在行首的标点（避头尾） */
-const NO_LINE_START = /^[，。、；：！？）》」』”’,.;:!?)\]]/;
+const NO_LINE_START = /^[，。、；：！？）》」』”’,.;:!?)\]%]/;
+/** 断行单位：中日韩单字、全角标点各自成一段；西文单词连同其后的空格为一段 */
+const TOKEN = /[぀-ヿ㐀-鿿가-힯豈-﫿]|[　-〿＀-￯]|[^\s぀-ヿ㐀-鿿가-힯豈-﫿　-〿＀-￯]+\s*|\s+/g;
+/** 不能出现在行尾的标点（避尾）：与后一段连在一起 */
+const NO_LINE_END = /[（《「『“‘(\[]$/;
+/** 两端对齐时每个间隙最多加宽的量（字号的倍数），超过则该行改为左对齐，避免字距过于稀疏 */
+const MAX_STRETCH = 0.35;
+/** 每个间隙最多压缩的量：下一段只差一点放不下时，略微挤紧本行而不是整段换到下一行 */
+const MAX_SQUEEZE = 0.08;
 
 /** k = 页面缩放 × 设备像素比（块坐标为 scale=1 的 CSS 像素） */
 export function drawTranslation(ctx: CanvasRenderingContext2D, blocks: TransBlock[], k: number): void {
@@ -31,20 +38,114 @@ export function drawTranslation(ctx: CanvasRenderingContext2D, blocks: TransBloc
     const startSize = b.size * k;
     // 沿用原文行距：字号缩小时行距按比例缩小，但不小于字号的 1.15 倍
     const pitch = (b.lh && b.lh > b.size ? b.lh : b.size * 1.25) * k;
+    const tokens = tokenize(b.t);
     let size = startSize;
-    let lines: string[] = [];
+    let lines: Line[] = [];
     let lh = pitch;
     for (; size >= startSize * 0.55; size -= 0.5) {
       ctx.font = `${size}px ${FONT_STACK}`;
-      lines = wrap(ctx, b.t, maxW);
+      lines = wrap(ctx, tokens, maxW, size);
       lh = Math.max(pitch * (size / startSize), size * 1.15);
       if ((lines.length - 1) * lh + size <= maxH + 1) break;
     }
     ctx.font = `${size}px ${FONT_STACK}`;
     ctx.fillStyle = fg;
     ctx.textBaseline = 'top';
-    lines.forEach((line, i) => ctx.fillText(line, b.x * k, b.y * k + i * lh, maxW * 1.02));
+    // 旧缓存没有对齐信息：多行按两端对齐（论文正文最常见）
+    const align = b.al ?? (b.h > b.size * 2 ? 'justify' : 'left');
+    lines.forEach((line, i) => drawLine(ctx, line, b.x * k, b.y * k + i * lh, maxW, size, align, i === lines.length - 1));
   }
+}
+
+interface Line {
+  tokens: string[];
+  widths: number[];
+  /** 不含行尾空白的宽度 */
+  width: number;
+}
+
+function drawLine(ctx: CanvasRenderingContext2D, line: Line, x0: number, y: number, maxW: number, size: number, align: string, last: boolean): void {
+  const { tokens, widths } = line;
+  // 行尾空白不参与排版
+  let n = tokens.length;
+  while (n > 0 && !tokens[n - 1].trim()) n--;
+  if (n === 0) return;
+  const extra = maxW - line.width;
+  const gaps = n - 1;
+  // 挤紧过的行（extra < 0）无论对齐方式都要按间隙分配，否则会超出右边界
+  if (gaps > 0 && (extra < 0 || (align === 'justify' && !last && extra / gaps <= size * MAX_STRETCH))) {
+    const add = extra / gaps;
+    let x = x0;
+    for (let i = 0; i < n; i++) {
+      ctx.fillText(tokens[i].trimEnd(), x, y);
+      x += widths[i] + add;
+    }
+    return;
+  }
+  const text = tokens.slice(0, n).join('').trimEnd();
+  const dx = align === 'center' ? Math.max(0, extra / 2) : 0;
+  ctx.fillText(text, x0 + dx, y, maxW * 1.02);
+}
+
+/** 切分断行单位；单独的空白并入前一段，使间隙只出现在段与段之间 */
+function tokenize(text: string): string[] {
+  const raw: string[] = [];
+  for (const t of text.match(TOKEN) ?? []) {
+    if (!t.trim()) {
+      if (raw.length) raw[raw.length - 1] += t;
+      continue;
+    }
+    // 带连字符的长词可以在连字符后断开（closed-loop → closed- / loop）
+    if (/[A-Za-z]-[A-Za-z]/.test(t)) raw.push(...t.split(/(?<=[A-Za-z]-)(?=[A-Za-z])/));
+    else raw.push(t);
+  }
+  // 开括号、开引号与后一段绑定，避免落在行尾
+  const out: string[] = [];
+  for (const t of raw) {
+    if (out.length && NO_LINE_END.test(out[out.length - 1])) out[out.length - 1] += t;
+    else out.push(t);
+  }
+  return out;
+}
+
+/** 贪心换行（按断行单位），遵守避头规则；记录每段宽度供两端对齐使用。 */
+function wrap(ctx: CanvasRenderingContext2D, tokens: string[], maxW: number, size: number): Line[] {
+  const lines: Line[] = [];
+  let cur: string[] = [];
+  let ws: number[] = [];
+  let width = 0; // 当前行含末尾空白的宽度
+  const trimmedWidth = (toks: string[], wds: number[]) => {
+    if (!toks.length) return 0;
+    const lastTok = toks[toks.length - 1];
+    const tail = lastTok.length - lastTok.trimEnd().length;
+    let w = wds.reduce((a, b) => a + b, 0);
+    if (tail) w -= wds[wds.length - 1] - ctx.measureText(lastTok.trimEnd()).width;
+    return w;
+  };
+  const flush = () => {
+    if (cur.length) lines.push({ tokens: cur, widths: ws.map((w, i) => (i === ws.length - 1 ? ctx.measureText(cur[i].trimEnd()).width : w)), width: trimmedWidth(cur, ws) });
+    cur = [];
+    ws = [];
+    width = 0;
+  };
+  for (const tok of tokens) {
+    const tw = ctx.measureText(tok).width;
+    // 允许按间隙数略微挤紧
+    const slack = cur.length * size * MAX_SQUEEZE;
+    const fits = width + ctx.measureText(tok.trimEnd()).width <= maxW + slack;
+    if (!cur.length || fits || NO_LINE_START.test(tok)) {
+      cur.push(tok);
+      ws.push(tw);
+      width += tw;
+    } else {
+      flush();
+      cur.push(tok);
+      ws.push(tw);
+      width = tw;
+    }
+  }
+  flush();
+  return lines;
 }
 
 /**
@@ -111,23 +212,4 @@ function luminance(css: string): number {
   const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(css);
   if (!m) return 1;
   return (0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3]) / 255;
-}
-
-/** 贪心换行：中日韩按字符断行，西文按单词断行。 */
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
-  const cjk = CJK.test(text) && (text.match(/[぀-ヿ㐀-鿿가-힯]/g) ?? []).length > text.length * 0.3;
-  const tokens = cjk ? [...text] : text.split(/(\s+)/).filter((s) => s.length > 0);
-  const lines: string[] = [];
-  let cur = '';
-  for (const tok of tokens) {
-    const cand = cur + tok;
-    if (ctx.measureText(cand.trimEnd()).width <= maxW || !cur || NO_LINE_START.test(tok)) {
-      cur = cand;
-    } else {
-      lines.push(cur.trimEnd());
-      cur = cjk ? tok : tok.trimStart();
-    }
-  }
-  if (cur.trim()) lines.push(cur.trimEnd());
-  return lines;
 }
