@@ -28,3 +28,34 @@ describe('classifyReference', () => {
     expect(run('We further evaluate the method on closed-loop benchmarks.')).toBe(false);
   });
 });
+
+import { joinContinuations, looksWrong, splitTranslation } from '../src/core/translate';
+
+describe('跨栏段落', () => {
+  it('句子未结束且下一块以小写开头时合并，连字符断词直接拼接', () => {
+    const u = joinContinuations(
+      [{ text: 'These planners are optimized for natural-' }, { text: 'istic driving distributions. Consequently, they remain brittle.' }, { text: 'A new paragraph.' }],
+      [false, false, false],
+    );
+    expect(u.map((x) => x.blocks)).toEqual([[0, 1], [2]]);
+    expect(u[0].text).toBe('These planners are optimized for naturalistic driving distributions. Consequently, they remain brittle.');
+  });
+
+  it('译文按长度比例分回，切在标点处', () => {
+    const parts = splitTranslation('这些规划器主要针对自然驾驶分布进行优化。因此，它们在交互式长尾场景中仍然脆弱。', [40, 40]);
+    expect(parts).toHaveLength(2);
+    expect(parts.join('')).toBe('这些规划器主要针对自然驾驶分布进行优化。因此，它们在交互式长尾场景中仍然脆弱。');
+    expect(parts[0].endsWith('。') || parts[0].endsWith('，')).toBe(true);
+  });
+});
+
+describe('looksWrong', () => {
+  const src = 'Consequently, they remain brittle on interactive long-tail cases that are rare but safety-critical.';
+  it('照抄原文句子或夹带附注时判为可疑', () => {
+    expect(looksWrong('因此，Consequently, they remain brittle on interactive long-tail cases... 译：它们仍然脆弱。', src, 'zh-CN')).toBe(true);
+    expect(looksWrong('自然istic? —应译"自然驾驶分布"', 'naturalistic driving distributions', 'zh-CN')).toBe(true);
+  });
+  it('正常译文不受影响', () => {
+    expect(looksWrong('因此，它们在罕见但关乎安全的交互式长尾场景（long-tail cases）中仍然脆弱。', src, 'zh-CN')).toBe(false);
+  });
+});

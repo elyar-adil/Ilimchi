@@ -75,7 +75,7 @@ export async function extractBlocks(page: PDFPage): Promise<TextBlock[]> {
   // 页面正文的左右边界，用来判断单行文字是否居中
   const left = Math.min(...lines.map((l) => l.x0));
   const right = Math.max(...lines.map((l) => l.x1));
-  return groupBlocks(lines, left, right).filter(isTranslatable);
+  return readingOrder(groupBlocks(lines, left, right), (left + right) / 2).filter(isTranslatable);
 }
 
 function groupLines(pieces: Piece[], pageWidth: number): Line[] {
@@ -214,6 +214,32 @@ function groupBlocks(lines: Line[], left: number, right: number): TextBlock[] {
     align: alignOf(b.lines, b.x0, b.x1, left, right),
     text: joinLines(b.lines),
   }));
+}
+
+/**
+ * 阅读顺序：横跨两栏的块（标题、通栏图注）把页面分成若干段，每段内先左栏、后右栏，各自从上到下。
+ * 单栏页面中所有块都按从上到下排列。
+ */
+function readingOrder(blocks: TextBlock[], mid: number): TextBlock[] {
+  const sorted = [...blocks].sort((a, b) => a.y - b.y || a.x - b.x);
+  const out: TextBlock[] = [];
+  let leftCol: TextBlock[] = [];
+  let rightCol: TextBlock[] = [];
+  const flush = () => {
+    out.push(...leftCol, ...rightCol);
+    leftCol = [];
+    rightCol = [];
+  };
+  for (const b of sorted) {
+    const spans = b.x < mid - b.size && b.x + b.w > mid + b.size;
+    if (spans) {
+      flush();
+      out.push(b);
+    } else if (b.x + b.w / 2 < mid) leftCol.push(b);
+    else rightCol.push(b);
+  }
+  flush();
+  return out;
 }
 
 /**
