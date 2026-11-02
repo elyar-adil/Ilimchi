@@ -1,0 +1,24 @@
+<!-- 应用图标：倾斜的论文片段，高亮词 insight 处于焦点，四周景深虚化并淡出为白色。
+     用浏览器以 1024×1024 视口打开后截图，再缩放为 180px（apple-touch-icon）和 64px（favicon）写入 index.html。 -->
+<!doctype html><html><head><style>
+@font-face{font-family:SS;src:url(../node_modules/@fontsource/source-serif-4/files/source-serif-4-latin-400-normal.woff2);font-weight:400}
+@font-face{font-family:SS;src:url(../node_modules/@fontsource/source-serif-4/files/source-serif-4-latin-600-normal.woff2);font-weight:600}
+html,body{margin:0;width:1024px;height:1024px;overflow:hidden;background:#fff}
+.stage{position:absolute;inset:0;perspective:1000px;perspective-origin:50% 50%}
+.page{position:absolute;left:50%;top:50%;width:2300px;margin-left:-1150px;margin-top:-700px;
+  transform:rotateX(38deg) rotateZ(-14deg);transform-origin:50% 50%;
+  font-family:SS;font-size:100px;line-height:1.38;color:#2a3038;text-align:justify;hyphens:auto}
+.page p{margin:0}
+mark{background:none;position:relative;color:#1b1608;font-weight:600}
+mark::before{content:"";position:absolute;left:-.16em;right:-.16em;top:.12em;bottom:.02em;background:#ffd23f;border-radius:.12em;z-index:-1;transform:skewX(-6deg)}
+mark{z-index:0;isolation:isolate;display:inline-block;transform:scale(1.22);margin:0 .34em}
+.layer{position:absolute;inset:0}
+.blur{filter:blur(5px);-webkit-mask-image:radial-gradient(ellipse 30% 20% at 50% 50%,transparent 35%,#000 90%);mask-image:radial-gradient(ellipse 30% 20% at 50% 50%,transparent 35%,#000 90%)}
+.blur2{filter:blur(14px);-webkit-mask-image:radial-gradient(ellipse 44% 34% at 50% 50%,transparent 45%,#000 95%);mask-image:radial-gradient(ellipse 44% 34% at 50% 50%,transparent 45%,#000 95%)}
+.fade{position:absolute;inset:0;background:radial-gradient(ellipse 50% 42% at 50% 50%,rgba(255,255,255,0) 35%,rgba(255,255,255,.8) 78%,#fff 100%)}
+</style></head><body>
+<template id="t"><div class="stage"><div class="page"><p>Planning in dense traffic remains an open problem, and recent work has largely focused on larger models and longer training schedules. Yet our analysis of closed-loop failures points elsewhere, which suggests that models trained only to imitate logged behaviour rarely meet the situations that matter. Reading closely, a single result changes how the whole method is understood: the gain comes not from scale but from <mark>insight</mark> into where the data is thin, and the rest of the paper follows from that observation. We revisit the benchmark, isolate the failure cases, and show that a small, careful change in the sampling recovers most of the gap without additional training. These findings hold across scenarios, cities and planners, and we release the code and the curated splits to support further study of the long tail.</p></div></div></template>
+<div class="layer" id="a"></div><div class="layer blur" id="b"></div><div class="layer blur2" id="c"></div><div class="fade"></div>
+<script>const t=document.getElementById('t');for(const id of['a','b','c'])document.getElementById(id).appendChild(t.content.cloneNode(true));
+document.fonts.ready.then(()=>{const pages=[...document.querySelectorAll('.page')];let best=null;for(let w=2700;w<=4000;w+=10){pages.forEach(p=>p.style.width=w+'px');const m=document.querySelector('#a mark');const r=(m.offsetLeft+m.offsetWidth/2)/w;const sc=Math.abs(r-0.5);if(!best||sc<best[1])best=[w,sc];}pages.forEach(p=>{p.style.width=best[0]+'px';p.style.marginLeft=(-best[0]/2)+'px';});for(let k=0;k<4;k++){const m=document.querySelector('#a mark').getBoundingClientRect();const dx=512-(m.left+m.width/2),dy=512-(m.top+m.height/2);for(const p of document.querySelectorAll('.page')){p.style.marginLeft=(parseFloat(getComputedStyle(p).marginLeft)+dx)+'px';p.style.marginTop=(parseFloat(getComputedStyle(p).marginTop)+dy)+'px';}}document.body.dataset.ready=1;});</script>
+</body></html>
