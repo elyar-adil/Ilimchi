@@ -14,8 +14,12 @@ export interface TextBlock {
   size: number;
   /** 行距（相邻基线间距）；单行块为字号的 1.25 倍 */
   pitch: number;
+  /** 原文对齐方式：两端对齐 / 居中 / 左对齐 */
+  align: Align;
   text: string;
 }
+
+export type Align = 'justify' | 'center' | 'left';
 
 interface Piece {
   str: string;
@@ -68,7 +72,10 @@ export async function extractBlocks(page: PDFPage): Promise<TextBlock[]> {
     });
   }
   const lines = groupLines(pieces, vp.width);
-  return groupBlocks(lines).filter(isTranslatable);
+  // 页面正文的左右边界，用来判断单行文字是否居中
+  const left = Math.min(...lines.map((l) => l.x0));
+  const right = Math.max(...lines.map((l) => l.x1));
+  return groupBlocks(lines, left, right).filter(isTranslatable);
 }
 
 function groupLines(pieces: Piece[], pageWidth: number): Line[] {
@@ -158,7 +165,7 @@ function joinPieces(pieces: Piece[]): string {
  * 把行合并为段落块：同一栏（水平范围重叠）、行距接近、字号接近的连续行归为一块。
  * 首行缩进（明显右移）视为新段落。
  */
-function groupBlocks(lines: Line[]): TextBlock[] {
+function groupBlocks(lines: Line[], left: number, right: number): TextBlock[] {
   type Acc = { lines: Line[]; x0: number; x1: number; top: number; bottom: number; size: number; pitch: number };
   const blocks: Acc[] = [];
   // 一行能否接在某个块后面：同一栏、紧挨在下方、字号与行距一致、不是新段落
@@ -204,8 +211,33 @@ function groupBlocks(lines: Line[]): TextBlock[] {
     h: b.bottom - b.top,
     size: median(b.lines.map((l) => l.size)),
     pitch: b.lines.length > 1 ? median(b.lines.slice(1).map((l, i) => l.base - b.lines[i].base)) : median(b.lines.map((l) => l.size)) * 1.25,
+    align: alignOf(b.lines, b.x0, b.x1, left, right),
     text: joinLines(b.lines),
   }));
+}
+
+/**
+ * 推断对齐方式：
+ * - 多行且除末行外右端齐平 → 两端对齐；
+ * - 各行中点重合而宽度不同，或单行、不贴左边界且位于版心正中（标题、作者） → 居中；
+ * - 其余为左对齐。
+ */
+function alignOf(lines: Line[], x0: number, x1: number, left: number, right: number): Align {
+  const size = median(lines.map((l) => l.size));
+  const tol = size * 0.6;
+  if (lines.length >= 2) {
+    const body = lines.slice(0, -1);
+    const flushRight = body.filter((l) => Math.abs(x1 - l.x1) < tol).length;
+    if (flushRight >= body.length * 0.7) return 'justify';
+    const mid = (x0 + x1) / 2;
+    const centered = lines.every((l) => Math.abs((l.x0 + l.x1) / 2 - mid) < tol);
+    const ragged = lines.some((l) => x1 - l.x1 > size * 2);
+    if (centered && ragged) return 'center';
+    return 'left';
+  }
+  const mid = (x0 + x1) / 2;
+  if (Math.abs(mid - (left + right) / 2) < size * 0.6 && x0 - left > size * 1.5) return 'center';
+  return 'left';
 }
 
 /** 行尾连字符（如 "pro-" + "cessing"）直接相连，其余用空格连接 */

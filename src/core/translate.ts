@@ -13,6 +13,8 @@ export interface TransBlock {
   size: number;
   /** 原文行距（旧缓存可能没有） */
   lh?: number;
+  /** 原文对齐方式 */
+  al?: 'justify' | 'center' | 'left';
   t: string;
 }
 
@@ -123,7 +125,7 @@ export async function translatePaper(opts: TranslateOpts): Promise<TranslateResu
       blocks.forEach((b, i) => {
         const t = map.get(String(i));
         // 模型原样返回（作者、单位、文献条目等）时保留原文，不做覆盖
-        if (t && normalize(t) !== normalize(b.text)) out.push({ x: b.x, y: b.y, w: b.w, h: b.h, size: b.size, lh: b.pitch, t });
+        if (t && normalize(t) !== normalize(b.text)) out.push({ x: b.x, y: b.y, w: b.w, h: b.h, size: b.size, lh: b.pitch, al: b.align, t });
       });
       await idb.put('kv', cacheKey(paperId, version, lang, n), { blocks: out });
       opts.onPage(n, out);
