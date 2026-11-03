@@ -106,6 +106,30 @@ export function installStreamIter(): void {
 
   // Safari versions without ReadableStream async iteration cannot execute
   // pdf.js page.getTextContent(), which consumes streams with for-await-of.
+  // Uint8Array.prototype.toHex is used by PDF.js to calculate document
+  // fingerprints. It is missing in older Safari releases.
+  const uint8ArrayPrototype = Uint8Array.prototype as Uint8Array['__proto__'] & {
+    toHex?: () => string;
+  };
+  if (typeof uint8ArrayPrototype.toHex !== 'function') {
+    Object.defineProperty(uint8ArrayPrototype, 'toHex', {
+      configurable: true,
+      writable: true,
+      value: function toHex(this: Uint8Array): string {
+        if (!(this instanceof Uint8Array)) {
+          throw new TypeError('Uint8Array.prototype.toHex called on incompatible receiver');
+        }
+        const digits = '0123456789abcdef';
+        let result = '';
+        for (let i = 0; i < this.length; i++) {
+          const byte = this[i];
+          result += digits[(byte >>> 4) & 0x0f] + digits[byte & 0x0f];
+        }
+        return result;
+      },
+    });
+  }
+
   const RS = scope.ReadableStream;
   if (!RS || typeof RS.prototype[Symbol.asyncIterator] === 'function') return;
 
