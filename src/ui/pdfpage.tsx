@@ -162,13 +162,18 @@ export function PdfPage(props: Props) {
         setTransRects(next);
       } else setTransRects(new Map());
       if (ink && cctx) applyInk(cctx, canvas.width, canvas.height);
+
+      // The PDF canvas is already complete. Reveal it before waiting for the
+      // selectable text layer; on older Safari the latter can stall even when
+      // the actual page drawing succeeded.
+      setRendered(true);
+
       layer.replaceChildren();
       layer.style.setProperty('--total-scale-factor', String(scale));
       wrapRef.current?.style.setProperty('--total-scale-factor', String(scale));
       tl = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport: vp });
       await tl.render();
       if (cancelled || !wrapRef.current) return;
-      setRendered(true);
       onRenderedRef.current(num, wrapRef.current, layer);
     })().catch((e: unknown) => {
       if (!cancelled && !(e instanceof Error && /cancel/i.test(e.name + e.message))) console.error(`第 ${num} 页渲染失败`, e);
