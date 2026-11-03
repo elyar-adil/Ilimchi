@@ -1,8 +1,7 @@
 /**
- * pdf.js 6 uses newer Map/WeakMap upsert APIs and Iterator.prototype.join.
- * Safari versions without the global Iterator constructor fail while importing
- * pdf.js, before any document is opened. Install the small compatibility layer
- * before pdf.js is evaluated. This function is also serialized into its worker.
+ * Compatibility helpers required by pdf.js 6 on Safari.
+ * This function is intentionally self-contained because it is serialized into
+ * the PDF worker (see src/pdf/engine.ts) as well as run in the main thread.
  */
 type Upsertable = { prototype: { getOrInsertComputed?: unknown } };
 for (const C of [Map, WeakMap] as unknown as Upsertable[]) {
@@ -19,10 +18,9 @@ for (const C of [Map, WeakMap] as unknown as Upsertable[]) {
 }
 
 /**
- * pdf.js 6 uses `for await (… of readableStream)` to read text content.
- * Older Safari lacks ReadableStream async iteration, so add values() and
- * Symbol.asyncIterator. The PDF.js worker receives this same self-contained
- * function through src/pdf/engine.ts.
+ * pdf.js 6 calls Promise.withResolvers() and Iterator.prototype.join(),
+ * and uses async iteration over ReadableStream. Older Safari versions may
+ * lack these APIs. Install them before pdf.js is evaluated.
  */
 export function installStreamIter(): void {
   const scope = globalThis as typeof globalThis & {
@@ -30,8 +28,33 @@ export function installStreamIter(): void {
     ReadableStream?: { prototype: Record<PropertyKey, unknown> };
   };
 
-  // Iterator objects already share this intrinsic prototype in older engines;
-  // only the global constructor and the join helper are missing.
+  // Promise.withResolvers is used by the PDF.js display and worker code.
+  const PromiseWithResolvers = Promise as PromiseConstructor & {
+    withResolvers?: <T>() => {
+      promise: Promise<T>;
+      resolve: (value: T | PromiseLike<T>) => void;
+      reject: (reason?: unknown) => void;
+    };
+  };
+  if (typeof PromiseWithResolvers.withResolvers !== 'function') {
+    Object.defineProperty(PromiseWithResolvers, 'withResolvers', {
+      configurable: true,
+      writable: true,
+      value: function withResolvers<T>() {
+        let resolve!: (value: T | PromiseLike<T>) => void;
+        let reject!: (reason?: unknown) => void;
+        const promise = new Promise<T>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        return { promise, resolve, reject };
+      },
+    });
+  }
+
+  // Older Safari has iterator objects but no global Iterator constructor.
+  // Their built-in iterator prototypes inherit from Object.prototype, so use
+  // that shared ancestor as the compatibility prototype.
   if (!scope.Iterator) {
     const iteratorPrototype = Object.getPrototypeOf(
       Object.getPrototypeOf([][Symbol.iterator]()),
@@ -62,6 +85,8 @@ export function installStreamIter(): void {
     });
   }
 
+  // Safari versions without ReadableStream async iteration cannot execute
+  // pdf.js page.getTextContent(), which consumes streams with for-await-of.
   const RS = scope.ReadableStream;
   if (!RS || typeof RS.prototype[Symbol.asyncIterator] === 'function') return;
 
