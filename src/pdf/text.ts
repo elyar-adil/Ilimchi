@@ -134,6 +134,8 @@ export interface PendingSelection {
   anchorLeft: number;
   /** 来自重排视图：矩形为估算值 */
   approx?: boolean;
+  /** 矩形可信，不需要重新定位 */
+  trust?: boolean;
 }
 
 const CTX = 40;

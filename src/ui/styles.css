@@ -1080,3 +1080,42 @@ button.link:hover:not(:disabled) { text-decoration: underline; filter: none; }
 .rf-note.pink { --c: var(--dot-pink); }
 .rf-note.purple { --c: var(--dot-purple); }
 .swatch.on::before { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--c); }
+
+/* ---------- arXiv HTML 版（LaTeXML） ---------- */
+.rf-source { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -8px 0 16px; padding: 6px 10px; border-radius: 6px; background: var(--wash); font: 12px/18px var(--sans); color: var(--ink-3); }
+.rf-html { text-align: justify; hyphens: auto; -webkit-hyphens: auto; hyphenate-character: "-"; overflow-wrap: break-word; }
+.rf-html h1, .rf-html .ltx_title_document { font-size: 1.35em; line-height: 1.3; font-weight: 600; text-align: left; margin: 0.4em 0 0.6em; }
+.rf-html h2, .rf-html h3, .rf-html h4, .rf-html h5, .rf-html h6 { font-size: 1.08em; line-height: 1.45; font-weight: 600; text-align: left; margin: 1.3em 0 0.5em; }
+.rf-html h2 { font-size: 1.15em; }
+.rf-html p, .rf-html .ltx_para { margin: 0 0 0.85em; }
+.rf-html .ltx_authors, .rf-html .ltx_personname { text-align: left; font-size: 0.9em; color: var(--ink-2); }
+.rf-html .ltx_author_notes, .rf-html .ltx_contact { display: none; }
+.rf-html .ltx_abstract { margin: 1em 0; }
+.rf-html .ltx_abstract h6 { font-size: 1em; }
+.rf-html figure, .rf-html .ltx_figure, .rf-html .ltx_table { margin: 1em 0; text-align: center; overflow-x: auto; }
+.rf-html img { max-width: 100%; height: auto; }
+.rf-html figcaption, .rf-html .ltx_caption { font-size: 0.86em; line-height: 1.6; color: var(--ink-2); text-align: justify; margin-top: 0.5em; }
+.rf-html table { border-collapse: collapse; margin: 0 auto; font-size: 0.85em; }
+.rf-html td, .rf-html th { padding: 0.2em 0.45em; }
+.rf-html .ltx_border_t { border-top: 1px solid var(--ink-3); }
+.rf-html .ltx_border_b { border-bottom: 1px solid var(--ink-3); }
+.rf-html .ltx_border_tt { border-top: 2px solid var(--ink-2); }
+.rf-html .ltx_border_bb { border-bottom: 2px solid var(--ink-2); }
+.rf-html .ltx_border_r { border-right: 1px solid var(--ink-4); }
+.rf-html .ltx_border_l { border-left: 1px solid var(--ink-4); }
+/* 行间公式：LaTeXML 用表格排版，窄屏时可横向滚动，编号靠右 */
+.rf-html table.ltx_equation, .rf-html table.ltx_equationgroup, .rf-html .ltx_eqn_table { display: block; overflow-x: auto; width: 100%; margin: 0.6em 0; font-size: 1em; }
+.rf-html .ltx_eqn_cell { padding: 0 0.15em; white-space: nowrap; }
+.rf-html .ltx_eqn_eqno { text-align: right; color: var(--ink-3); }
+.rf-html math { font-size: 1.02em; }
+.rf-html math[display="block"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+.rf-html .ltx_note { font-size: 0.85em; color: var(--ink-3); }
+.rf-html .ltx_note_outer { display: block; }
+.rf-html .ltx_tag_note { display: none; }
+.rf-html .ltx_bibliography { font-size: 0.85em; color: var(--ink-2); }
+.rf-html .ltx_bibitem { margin-bottom: 0.5em; }
+.rf-html .ltx_listing, .rf-html pre { overflow-x: auto; font-size: 0.8em; text-align: left; }
+.rf-html .ltx_algorithm { text-align: left; overflow-x: auto; }
+.rf-html a { color: var(--pencil); text-decoration: none; }
+.rf-html .ltx_tag { margin-right: 0.3em; }
+:root[data-theme="dark"] .rf-html img { filter: invert(0.88) hue-rotate(180deg); }

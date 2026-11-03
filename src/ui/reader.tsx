@@ -27,6 +27,8 @@ import { TEXT_SIDE_PX, type HlPatch } from './pdfpage';
 import { PdfPage, type DraftText } from './pdfpage';
 import { TopBar, FloatingTools, type Tool } from './toolbar';
 import { Reflow, type ReflowSelection } from './reflow';
+import { HtmlReflow } from './htmlreflow';
+import { ArxivHtmlBlocked, arxivIdOf, loadArxivHtml, type ArxivHtml } from '../core/arxivhtml';
 import type { TransMarkSpan } from './translayer';
 import { pageLayout } from '../pdf/layoutcache';
 import { rangesInBlock, transByBlock } from '../core/reflowmap';
@@ -175,6 +177,11 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const reflow = prefs.view === 'reflow';
   const [rfJump, setRfJump] = useState<{ page: number; id: string | null; seq: number } | null>(null);
   const [rfHl, setRfHl] = useState<{ id: string; x: number; y: number } | null>(null);
+  // arXiv 官方 HTML 版（有则优先用于重排）
+  const [arxivHtml, setArxivHtml] = useState<ArxivHtml | null>(null);
+  const [preferPdfReflow, setPreferPdfReflow] = useState(false);
+  const [arxivHtmlBlocked, setArxivHtmlBlocked] = useState(false);
+  const htmlTried = useRef<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
   const toolRef = useRef(tool);
@@ -903,6 +910,23 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     setPending({ ...sel, pageEl: document.body, layer: document.body, approx: true });
   };
 
+  // 重排模式下尝试取 arXiv HTML 版（每篇论文每个版本只尝试一次）
+  useEffect(() => {
+    const ax = arxivIdOf(doc.id);
+    const key = `${doc.id}:${doc.version}`;
+    if (!reflow || !ax || htmlTried.current === key) return;
+    htmlTried.current = key;
+    setArxivHtml(null);
+    let cancelled = false;
+    setArxivHtmlBlocked(false);
+    void loadArxivHtml(idb, ax, doc.version, getPrefs().proxy)
+      .then((h) => !cancelled && setArxivHtml(h))
+      .catch((e) => !cancelled && setArxivHtmlBlocked(e instanceof ArxivHtmlBlocked));
+    return () => {
+      cancelled = true;
+    };
+  }, [reflow, doc.id, doc.version]);
+
   // 切换视图：回到当前页
   const toggleView = () => {
     setPending(null);
@@ -973,7 +997,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       rects: pending.rects,
       note: '',
       // 重排视图中的矩形是估算值：留空指纹，原版页面渲染时会按文本层重新精确定位
-      fingerprint: pending.approx ? '' : load.loaded.fp,
+      fingerprint: pending.approx && !pending.trust ? '' : load.loaded.fp,
       version: docRef.current.version,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1327,8 +1351,36 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
 
       <div class="body">
         <div class="stage">
-        {reflow && loaded && (
+        {reflow && loaded && arxivHtml && !preferPdfReflow && !(showTrans && hasTrans) && (
+          <HtmlReflow
+            doc={arxivHtml}
+            pdf={loaded.pdf}
+            anns={anns}
+            focusId={focusId}
+            fontSize={prefs.reflowFont}
+            jump={rfJump}
+            onSelect={onReflowSelect}
+            onAnchorFail={() => setTransErr(tr('所选文字在 PDF 中找不到对应位置（例如含公式），换个范围试试'))}
+            onUsePdf={() => setPreferPdfReflow(true)}
+            onTapHl={(id, x, top, bottom) => {
+              setPending(null);
+              setFocusId(id);
+              setRfHl({ id, x, y: bottom + 120 < window.innerHeight ? bottom + 8 : Math.max(8, top - 112) });
+            }}
+          />
+        )}
+        {reflow && loaded && !(arxivHtml && !preferPdfReflow && !(showTrans && hasTrans)) && (
           <Reflow
+            topBar={arxivHtml ? (
+              <div class="rf-source">
+                <span>{showTrans && hasTrans ? tr('显示译文时使用 PDF 重排') : tr('PDF 重排')}</span>
+                {!(showTrans && hasTrans) && <button class="ghost small" onClick={() => setPreferPdfReflow(false)}>{tr('改用 arXiv HTML 版')}</button>}
+              </div>
+            ) : arxivHtmlBlocked ? (
+              <div class="rf-source">
+                <span>{tr('无法直接读取 arXiv HTML 版，可在设置中配置 PDF 代理后使用')}</span>
+              </div>
+            ) : undefined}
             pdf={loaded.pdf}
             pages={loaded.pdf.numPages}
             anns={anns}

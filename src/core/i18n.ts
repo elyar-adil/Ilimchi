@@ -379,5 +379,12 @@ const EN: Record<string, string> = {
   "默认字号": "Default text size",
   "字号增大": "Larger text",
   "关闭": "Close",
+  "arXiv HTML 版": "arXiv HTML version",
+  "改用 PDF 重排": "Use PDF reflow",
+  "改用 arXiv HTML 版": "Use arXiv HTML",
+  "PDF 重排": "PDF reflow",
+  "显示译文时使用 PDF 重排": "PDF reflow is used while showing the translation",
+  "所选文字在 PDF 中找不到对应位置（例如含公式），换个范围试试": "The selected text could not be found in the PDF (e.g. it contains math); try a different range",
+  "无法直接读取 arXiv HTML 版，可在设置中配置 PDF 代理后使用": "The arXiv HTML version cannot be read directly; set up the PDF proxy in Settings to use it",
   "跟随界面语言": "Same as interface language"
 };

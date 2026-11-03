@@ -6,7 +6,7 @@ import { CAPTION, type InlineMath, type PageLayout, type LayoutBlock } from '../
 import { pageBitmap, type PageBitmap } from '../pdf/bitmap';
 import { pageLayout } from '../pdf/layoutcache';
 import { contextOf, locateQuote } from '../core/anchor';
-import { rangesInBlock, rawRangeOf, rectsForRaw, transByBlock } from '../core/reflowmap';
+import { locateInBlocks, rangesInBlock, rawRangeOf, rectsForRaw, transByBlock } from '../core/reflowmap';
 import type { Annotation, Rect } from '../core/types';
 import type { TransBlock } from '../core/translate';
 import type { TransMarkSpan } from './translayer';
@@ -28,6 +28,8 @@ export interface ReflowSelection {
   rects: Rect[];
   anchorTop: number;
   anchorLeft: number;
+  /** 矩形可信（不必在原版页面重新定位） */
+  trust?: boolean;
 }
 
 interface Props {
@@ -50,6 +52,8 @@ interface Props {
   onPage: (page: number, offset: number) => void;
   onSelect: (sel: ReflowSelection | null) => void;
   onTapHl: (id: string, x: number, top: number, bottom: number) => void;
+  /** 显示在正文最上方（例如切换到 arXiv HTML 版的入口） */
+  topBar?: ComponentChildren;
 }
 
 interface Located {
@@ -174,6 +178,7 @@ export function Reflow(p: Props) {
   return (
     <div class="reflow" ref={scrollRef} onScroll={onScroll} onClick={onClick} style={{ '--rf-size': `${p.fontSize}px` } as Record<string, string>}>
       <div class="rf-doc">
+        {p.topBar}
         {layouts.map((layout, idx) => {
           const page = idx + 1;
           if (!layout)
@@ -218,9 +223,11 @@ function RfPage(props: {
   const { layout, page } = props;
   // 高亮在本页原始文本中的位置
   const located: Located[] = [];
+  const blockSpans: { ann: Annotation; i: number; s: number; e: number }[] = [];
   for (const a of props.anns) {
     const m = locateQuote(layout.raw, { quote: a.quote, prefix: a.prefix, suffix: a.suffix, start: a.start });
     if (m) located.push({ ann: a, start: m.start, end: m.end });
+    else for (const g of locateInBlocks(layout, a.quote) ?? []) blockSpans.push({ ann: a, ...g });
   }
   const tmap = transByBlock(layout, props.trans);
   const byId = new Map(props.anns.map((a) => [a.id, a]));
@@ -283,6 +290,7 @@ function RfPage(props: {
             text = b.text;
             spans = [];
             for (const l of located) for (const [s, e] of rangesInBlock(b, l.start, l.end)) spans.push({ s, e, ann: l.ann });
+            for (const g of blockSpans) if (g.i === b.i) spans.push({ s: g.s, e: g.e, ann: g.ann });
           }
           for (const a of uniqueNotes(spans)) if (!notes.includes(a)) notes.push(a);
           // 段落跨栏时分成多块，这里拼回同一段；块之间的空格不属于任何块
