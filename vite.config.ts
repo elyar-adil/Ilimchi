@@ -7,6 +7,11 @@ const env = (globalThis as unknown as { process?: { env?: Record<string, string 
 
 export default defineConfig({
   base: env.BASE_PATH ?? '/',
+  // The modern PDF.js entry targets newer browsers; use the legacy bundle
+  // while retaining the package's normal TypeScript declarations.
+  resolve: {
+    alias: [{ find: /^pdfjs-dist$/, replacement: 'pdfjs-dist/legacy/build/pdf.mjs' }],
+  },
   plugins: [preact(), viteSingleFile()],
   build: {
     target: 'es2022',
