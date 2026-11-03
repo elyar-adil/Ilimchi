@@ -19,5 +19,6 @@ export type PDFPage = pdfjs.PDFPageProxy;
 /** 每次都传入副本：pdf.js 会转移（detach）传入的 ArrayBuffer，而缓存里需要保留原件。 */
 export async function openPdf(data: ArrayBuffer): Promise<PDFDoc> {
   ensureWorker();
-  return pdfjs.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
+  // fontExtraProperties：取得字体名（如 CMMI10），用于识别正文中的数学公式
+  return pdfjs.getDocument({ data: new Uint8Array(data.slice(0)), fontExtraProperties: true }).promise;
 }

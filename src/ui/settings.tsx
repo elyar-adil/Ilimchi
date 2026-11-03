@@ -44,7 +44,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
     const base = aiCfg.baseUrl.trim();
     if (base && !/^https?:\/\//.test(base)) return setMsg(tr('服务地址必须以 http(s):// 开头'));
     try {
-      setAiConfig({ baseUrl: base, model: aiCfg.model.trim(), targetLang: aiCfg.targetLang, layout: aiCfg.layout !== false, visionModel: (aiCfg.visionModel ?? '').trim() });
+      setAiConfig({ baseUrl: base, model: aiCfg.model.trim(), targetLang: aiCfg.targetLang });
       if (aiKey.trim()) {
         await saveAiKey(idb, aiKey, aiKeyMode);
         setAiKey('');
@@ -262,18 +262,6 @@ export function Settings({ store, session, onClose, onSignOut }: {
                   <option value="auto">{tr('跟随界面语言')}</option>
                   {TARGET_LANGS.map((l) => <option value={l.id}>{l.name}</option>)}
                 </select>
-              </div>
-            </div>
-            <div class="set">
-              <span class="set-label">{tr('重排版面')}</span>
-              <div class="set-control">
-                <label class="radio"><input type="checkbox" checked={aiCfg.layout !== false} onChange={(e) => setAiCfg({ ...aiCfg, layout: (e.target as HTMLInputElement).checked })} />{tr('重排时用 AI 识别图表与段落（需要能看图的模型）')}</label>
-              </div>
-            </div>
-            <div class="set">
-              <label class="set-label" for="ai-vision">{tr('识图模型')}</label>
-              <div class="set-control">
-                <input id="ai-vision" value={aiCfg.visionModel ?? ''} placeholder={tr('留空则使用上面的模型')} autoComplete="off" spellcheck={false} onInput={(e) => setAiCfg({ ...aiCfg, visionModel: (e.target as HTMLInputElement).value })} />
               </div>
             </div>
             <div class="set">

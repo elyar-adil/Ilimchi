@@ -2,7 +2,8 @@ import { tr } from '../core/i18n';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Fragment, type ComponentChildren } from 'preact';
 import type { PDFDoc } from '../pdf/engine';
-import { CAPTION, type PageLayout, type LayoutBlock } from '../pdf/blocks';
+import { CAPTION, type InlineMath, type PageLayout, type LayoutBlock } from '../pdf/blocks';
+import { pageBitmap, type PageBitmap } from '../pdf/bitmap';
 import { pageLayout } from '../pdf/layoutcache';
 import { contextOf, locateQuote } from '../core/anchor';
 import { rangesInBlock, rawRangeOf, rectsForRaw, transByBlock } from '../core/reflowmap';
@@ -10,10 +11,6 @@ import type { Annotation, Rect } from '../core/types';
 import type { TransBlock } from '../core/translate';
 import type { TransMarkSpan } from './translayer';
 import type { FlowItem } from '../pdf/blocks';
-import type { AiConfig } from '../core/ai';
-import { aiLayoutPage, layoutCacheKey, loadAiLayout, saveAiLayout } from '../core/ailayout';
-import { AiHttpError } from '../core/ai';
-import { idb } from '../core/services';
 
 /**
  * 重排视图：把 PDF 每页的文字按阅读顺序排成可自由换行的段落，适合手机阅读。
@@ -53,9 +50,6 @@ interface Props {
   onPage: (page: number, offset: number) => void;
   onSelect: (sel: ReflowSelection | null) => void;
   onTapHl: (id: string, x: number, top: number, bottom: number) => void;
-  /** 用 AI 识别版面（未配置时为 null） */
-  ai: { cfg: AiConfig; apiKey: string; paperId: string; version: string } | null;
-  onAiError: (msg: string) => void;
 }
 
 interface Located {
@@ -71,10 +65,6 @@ export function Reflow(p: Props) {
   const [errors, setErrors] = useState<string[]>([]);
   const [retry, setRetry] = useState(0);
   const restored = useRef(false);
-  // AI 版面：页码 → 重排项；正在识别的页
-  const [aiFlows, setAiFlows] = useState<Record<number, FlowItem[]>>({});
-  const [aiBusy, setAiBusy] = useState<Set<number>>(new Set());
-  const aiQueue = useRef<{ want: Set<number>; running: number; done: Set<number>; stopped: boolean }>({ want: new Set(), running: 0, done: new Set(), stopped: false });
 
   // 依次分析每一页（只提取文字，速度很快）
   useEffect(() => {
@@ -110,91 +100,6 @@ export function Reflow(p: Props) {
       cancelled = true;
     };
   }, [p.pdf, p.pages, retry]);
-
-  // ---------- AI 版面识别 ----------
-  const ai = p.ai;
-  const aiModel = ai ? ai.cfg.visionModel?.trim() || ai.cfg.model : '';
-  const aiKeyOf = (n: number) => (ai ? layoutCacheKey(ai.paperId, ai.version, n, aiModel) : '');
-  // 先读本机缓存
-  useEffect(() => {
-    aiQueue.current = { want: new Set(), running: 0, done: new Set(), stopped: false };
-    setAiFlows({});
-    if (!ai || !layouts.length) return;
-    let cancelled = false;
-    void (async () => {
-      const found: Record<number, FlowItem[]> = {};
-      for (let n = 1; n <= layouts.length; n++) {
-        const f = await loadAiLayout(idb, aiKeyOf(n));
-        if (f) {
-          found[n] = f;
-          aiQueue.current.done.add(n);
-        }
-      }
-      if (!cancelled) setAiFlows(found);
-      pump();
-    })();
-    return () => {
-      cancelled = true;
-      aiQueue.current.stopped = true;
-    };
-  }, [layouts, ai?.paperId, ai?.version, aiModel]);
-
-  const pump = () => {
-    const q = aiQueue.current;
-    if (!ai || q.stopped) return;
-    while (q.running < 2) {
-      const n = [...q.want].sort((a, b) => a - b).find((x) => !q.done.has(x));
-      if (n === undefined) return;
-      q.want.delete(n);
-      q.done.add(n);
-      q.running++;
-      setAiBusy((s) => new Set(s).add(n));
-      void runAi(n).finally(() => {
-        q.running--;
-        setAiBusy((s) => {
-          const next = new Set(s);
-          next.delete(n);
-          return next;
-        });
-        pump();
-      });
-    }
-  };
-
-  const runAi = async (n: number) => {
-    const layout = layouts[n - 1];
-    if (!ai || !layout || !layout.blocks.length) return;
-    try {
-      const page = await p.pdf.getPage(n);
-      const image = await renderPageImage(page, 1100);
-      const flow = await aiLayoutPage({ cfg: ai.cfg, apiKey: ai.apiKey, layout, image, annotate: (boxes) => annotateImage(image, boxes) });
-      if (aiQueue.current.stopped) return;
-      await saveAiLayout(idb, aiKeyOf(n), flow);
-      setAiFlows((m) => ({ ...m, [n]: flow }));
-    } catch (e) {
-      console.error(`第 ${n} 页 AI 版面识别失败`, e);
-      // 模型不支持图片、Key 无效等配置问题：本次不再继续请求
-      if (e instanceof AiHttpError && e.status >= 400 && e.status < 500 && e.status !== 429) {
-        aiQueue.current.stopped = true;
-        p.onAiError(e.message);
-      }
-    }
-  };
-
-  // 页面接近视口时排队识别
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (!ai || !root || !layouts.length) return;
-    const io = new IntersectionObserver(
-      (es) => {
-        for (const e of es) if (e.isIntersecting) aiQueue.current.want.add(Number((e.target as HTMLElement).dataset.page));
-        pump();
-      },
-      { root, rootMargin: '1500px 0px' },
-    );
-    root.querySelectorAll('section[data-page]').forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [layouts, ai?.paperId, aiModel]);
 
   // 打开时回到阅读位置
   useLayoutEffect(() => {
@@ -292,8 +197,6 @@ export function Reflow(p: Props) {
               marks={p.showTrans ? p.marks[page] ?? null : null}
               focusId={p.focusId}
               lang={p.lang}
-              flow={aiFlows[page] ?? null}
-              aiBusy={aiBusy.has(page)}
             />
           );
         })}
@@ -311,9 +214,6 @@ function RfPage(props: {
   marks: Map<number, TransMarkSpan[]> | null;
   focusId: string | null;
   lang: string;
-  /** AI 识别的版面；没有时用本地规则分析的结果 */
-  flow: FlowItem[] | null;
-  aiBusy: boolean;
 }) {
   const { layout, page } = props;
   // 高亮在本页原始文本中的位置
@@ -325,10 +225,51 @@ function RfPage(props: {
   const tmap = transByBlock(layout, props.trans);
   const byId = new Map(props.anns.map((a) => [a.id, a]));
 
+  // 行内公式：页面进入视口附近时取整页位图，把每个公式区域画到对应的小画布上
+  const secRef = useRef<HTMLElement>(null);
+  const [bmp, setBmp] = useState<PageBitmap | null>(null);
+  const hasMath = layout.blocks.some((b) => b.math?.length);
+  useEffect(() => {
+    const el = secRef.current;
+    if (!el || !hasMath) return;
+    let cancelled = false;
+    const io = new IntersectionObserver(
+      (es) => {
+        if (!es.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        void pageBitmap(props.pdf, page).then((b) => !cancelled && setBmp(b), () => {});
+      },
+      { rootMargin: '1200px 0px' },
+    );
+    io.observe(el);
+    return () => {
+      cancelled = true;
+      io.disconnect();
+    };
+  }, [props.pdf, page, hasMath]);
+  useEffect(() => {
+    const el = secRef.current;
+    if (!el || !bmp) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    el.querySelectorAll<HTMLCanvasElement>('canvas[data-math]').forEach((c) => {
+      const key = `${c.dataset.math}|${c.clientWidth}`;
+      if (c.dataset.drawn === key) return;
+      const [x, y, w, h] = c.dataset.math!.split(',').map(Number);
+      const cw = Math.max(1, Math.round((c.clientWidth || w) * dpr));
+      const ch = Math.max(1, Math.round((c.clientHeight || h) * dpr));
+      c.width = cw;
+      c.height = ch;
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(bmp.canvas, x * bmp.scale, y * bmp.scale, w * bmp.scale, h * bmp.scale, 0, 0, cw, ch);
+      c.dataset.drawn = key;
+    });
+  });
+
   return (
-    <section class="rf-page" data-page={page}>
-      <div class="rf-pageno" aria-hidden="true">{props.aiBusy ? `${tr('AI 排版中')} · ` : ''}{page}</div>
-      {groupFlow(layout, props.flow ?? layout.flow, tmap).map((g, k) => {
+    <section class="rf-page" data-page={page} ref={secRef}>
+      <div class="rf-pageno" aria-hidden="true">{page}</div>
+      {groupFlow(layout, layout.flow, tmap).map((g, k) => {
         if (g.kind === 'crop') return <Crop key={`c${k}`} pdf={props.pdf} page={page} rect={g.rect} pageW={layout.width} pageH={layout.height} />;
         const notes: Annotation[] = [];
         const parts = g.blocks.map((b, j) => {
@@ -349,7 +290,7 @@ function RfPage(props: {
           return (
             <Fragment key={b.i}>
               {sep}
-              <span data-b={b.i} data-tr={t ? '1' : undefined}>{renderMarked(text, spans, props.focusId)}</span>
+              <span data-b={b.i} data-tr={t ? '1' : undefined}>{renderMarked(text, spans, props.focusId, t ? [] : b.math ?? [], b.size)}</span>
             </Fragment>
           );
         });
@@ -384,13 +325,15 @@ function groupFlow(layout: PageLayout, flow: FlowItem[], tmap: Map<number, unkno
   for (const f of flow) {
     if (f.kind === 'crop') {
       out.push({ kind: 'crop', rect: f });
+      // 图或公式之后另起一段，保证它出现在原来的位置
+      lastPara = null;
       continue;
     }
     const b = layout.blocks[f.i];
     if (!b) continue;
     const translated = tmap.has(b.i);
     const prev = lastPara?.blocks[lastPara.blocks.length - 1];
-    // AI 给出了段落归属时直接采用；否则按句子是否结束来判断
+    // 版面分析给出段落归属时直接采用；否则按句子是否结束来判断
     const continues =
       f.cont !== undefined
         ? f.cont && !!lastPara && lastPara.translated === translated
@@ -424,12 +367,20 @@ function uniqueNotes(spans: Span[]): Annotation[] {
 }
 
 /** 按高亮区间切分文字；重叠时后创建的高亮在外层显示 */
-function renderMarked(text: string, spans: Span[], focusId: string | null): ComponentChildren {
-  if (!spans.length) return text;
+/**
+ * 按高亮区间切分文字；重叠时后创建的高亮在外层显示。
+ * 行内公式以截图显示：图片放在公式区间的开头，原文文字隐藏保留（用于选择、复制与偏移计算）。
+ */
+function renderMarked(text: string, spans: Span[], focusId: string | null, maths: InlineMath[] = [], size = 10): ComponentChildren {
+  if (!spans.length && !maths.length) return text;
   const cuts = new Set<number>([0, text.length]);
   for (const sp of spans) {
     cuts.add(Math.max(0, Math.min(text.length, sp.s)));
     cuts.add(Math.max(0, Math.min(text.length, sp.e)));
+  }
+  for (const m of maths) {
+    cuts.add(m.s);
+    cuts.add(m.e);
   }
   const pts = [...cuts].sort((a, b) => a - b);
   const out: ComponentChildren[] = [];
@@ -437,10 +388,23 @@ function renderMarked(text: string, spans: Span[], focusId: string | null): Comp
     const a = pts[i];
     const b = pts[i + 1];
     const piece = text.slice(a, b);
+    const m = maths.find((x) => x.s <= a && x.e >= b);
+    let node: ComponentChildren = piece;
+    if (m) {
+      node =
+        m.s === a ? (
+          <span class="rf-math" key={`m${i}`} style={{ width: `${m.w / size}em`, height: `${m.h / size}em`, verticalAlign: `${-(m.y + m.h - m.base) / size}em` }}>
+            <canvas data-math={`${m.x},${m.y},${m.w},${m.h}`} />
+            <span class="rf-src">{piece}</span>
+          </span>
+        ) : (
+          <span class="rf-src-tail" key={`m${i}`}>{piece}</span>
+        );
+    }
     const cover = spans.filter((sp) => sp.s <= a && sp.e >= b).sort((x, y) => x.ann.createdAt - y.ann.createdAt);
     const top = cover[cover.length - 1];
     if (!top) {
-      out.push(piece);
+      out.push(node);
       continue;
     }
     const last = top.e === b;
@@ -450,7 +414,7 @@ function renderMarked(text: string, spans: Span[], focusId: string | null): Comp
         data-ann={top.ann.id}
         class={`rf-hl ${top.ann.color} ${top.ann.decoration ?? 'highlight'}${focusId === top.ann.id ? ' focus' : ''}${last && top.ann.note.trim() ? ' has-note' : ''}`}
       >
-        {piece}
+        {node}
       </mark>,
     );
   }
@@ -544,30 +508,25 @@ function Crop(props: { pdf: PDFDoc; page: number; rect: { x: number; y: number; 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    let task: { promise: Promise<unknown>; cancel(): void } | null = null;
-    void (async () => {
-      const page = await props.pdf.getPage(props.page);
-      const canvas = canvasRef.current;
-      const wrap = wrapRef.current;
-      if (cancelled || !canvas || !wrap) return;
-      const shown = Math.min(wrap.clientWidth || cssW, cssW * 1.6);
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const s = (shown * dpr) / cssW;
-      canvas.width = Math.max(1, Math.round(cssW * s));
-      canvas.height = Math.max(1, Math.round(cssH * s));
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-      const vp = page.getViewport({ scale: s });
-      task = page.render({ canvasContext: ctx, canvas, viewport: vp, transform: [1, 0, 0, 1, -rect.x * pageW * s, -rect.y * pageH * s] });
-      await task.promise;
-      if (cancelled) return;
-      if (isBlank(ctx, canvas.width, canvas.height)) setBlank(true);
-    })().catch(() => {});
+    void pageBitmap(props.pdf, props.page)
+      .then((bmp) => {
+        const canvas = canvasRef.current;
+        const wrap = wrapRef.current;
+        if (cancelled || !canvas || !wrap) return;
+        const sw = rect.w * pageW * bmp.scale;
+        const sh = rect.h * pageH * bmp.scale;
+        canvas.width = Math.max(1, Math.round(sw));
+        canvas.height = Math.max(1, Math.round(sh));
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+        ctx.drawImage(bmp.canvas, rect.x * pageW * bmp.scale, rect.y * pageH * bmp.scale, sw, sh, 0, 0, canvas.width, canvas.height);
+        if (isBlank(ctx, canvas.width, canvas.height)) setBlank(true);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
-      task?.cancel();
     };
-  }, [visible]);
+  }, [visible, rect.x, rect.y, rect.w, rect.h]);
 
   if (blank) return null;
   return (
@@ -588,48 +547,4 @@ function isBlank(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
   } catch {
     return false;
   }
-}
-
-/** 把页面渲染成 JPEG（给模型看） */
-async function renderPageImage(page: Awaited<ReturnType<PDFDoc['getPage']>>, width: number): Promise<string> {
-  const base = page.getViewport({ scale: 1 });
-  const vp = page.getViewport({ scale: width / base.width });
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(vp.width);
-  canvas.height = Math.round(vp.height);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('canvas');
-  await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
-  const url = canvas.toDataURL('image/jpeg', 0.8);
-  canvas.width = canvas.height = 0;
-  return url;
-}
-
-/** 在页面图上画出编号的裁剪框（交给模型复查） */
-async function annotateImage(src: string, boxes: { x: number; y: number; w: number; h: number }[]): Promise<string> {
-  const img = new Image();
-  img.src = src;
-  await img.decode();
-  const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(img, 0, 0);
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.lineWidth = Math.max(2, W / 400);
-  ctx.font = `bold ${Math.round(W / 40)}px sans-serif`;
-  boxes.forEach((b, k) => {
-    ctx.strokeStyle = 'rgba(230, 30, 30, 0.95)';
-    ctx.strokeRect(b.x * W, b.y * H, b.w * W, b.h * H);
-    const label = String(k + 1);
-    const tw = ctx.measureText(label).width + 10;
-    ctx.fillStyle = 'rgba(230, 30, 30, 0.95)';
-    ctx.fillRect(b.x * W, b.y * H, tw, W / 32);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(label, b.x * W + 5, b.y * H + W / 40);
-  });
-  const url = canvas.toDataURL('image/jpeg', 0.8);
-  canvas.width = canvas.height = 0;
-  return url;
 }

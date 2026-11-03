@@ -66,6 +66,8 @@ interface Piece {
   str: string;
   /** str 在页面原始文本中的起始偏移 */
   off: number;
+  /** 是否是数学字体（CMMI、CMSY、Math 字体等） */
+  math: boolean;
   x0: number;
   x1: number;
   base: number;
@@ -87,6 +89,8 @@ interface Line {
 }
 
 const CJK = /[぀-ヿ㐀-鿿가-힯]/;
+/** TeX 与常见数学字体 */
+const MATH_FONT = /^(CMMI|CMSY|CMEX|CMBSY|CMMIB|MSAM|MSBM|EUFM|EUSM|EUEX|RSFS|LMMath|LatinModernMath|STIX.*Math|XITS.*Math|Cambria.*Math|NewCM.*Math|TeXGyre.*Math|Asana|MTMI|MTSY|MTEX|NewTX(MI|BMI|SY|EX)|ntxmi|ntxsy|txmi|txsy|txex|pxmi|pxsy|zxxmi|Symbol|mathkerncmssi|CMMSI)/i;
 /** arXiv 自动加上的编号戳，例如 "arXiv:2607.10630v1 [cs.RO] 12 Jul 2026" */
 const ARXIV_STAMP = /^\s*arXiv:\d{4}\.\d{4,5}(v\d+)?\s*\[/;
 
@@ -103,9 +107,22 @@ export interface PieceBox {
 /** inside：位于图表区域内的文字（图中标注），随图一起截图 */
 export type BlockRole = 'text' | 'heading' | 'figure' | 'skip' | 'inside';
 
+/** 正文中的行内公式：块内字符区间 [s, e) 与其在页面上的范围（scale = 1 坐标），base 为基线 */
+export interface InlineMath {
+  s: number;
+  e: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  base: number;
+}
+
 export interface LayoutBlock extends TextBlock {
   /** 在 layout.blocks 中的序号 */
   i: number;
+  /** 行内公式（重排时以截图形式嵌在文字中） */
+  math?: InlineMath[];
   translatable: boolean;
   role: BlockRole;
 }
@@ -133,6 +150,21 @@ export async function extractBlocks(page: PDFPage): Promise<LayoutBlock[]> {
 
 export async function extractLayout(page: PDFPage): Promise<PageLayout> {
   const vp = page.getViewport({ scale: 1 });
+  // 先取绘制指令：字体会随之加载（用于识别数学字体），也用来找图形区域
+  let ops: { fnArray: number[]; argsArray: unknown[] } | null = null;
+  try {
+    ops = await page.getOperatorList();
+  } catch {
+    ops = null;
+  }
+  const fontName = (id: string): string => {
+    try {
+      const objs = (page as unknown as { commonObjs: { has(id: string): boolean; get(id: string): { name?: string } } }).commonObjs;
+      return objs.has(id) ? objs.get(id)?.name ?? '' : '';
+    } catch {
+      return '';
+    }
+  };
   const content = await page.getTextContent();
   const pieces: Piece[] = [];
   let raw = '';
@@ -152,6 +184,7 @@ export async function extractLayout(page: PDFPage): Promise<PageLayout> {
     pieces.push({
       str: item.str,
       off,
+      math: MATH_FONT.test(fontName(item.fontName).replace(/^[A-Z]{6}\+/, '')),
       x0,
       x1: x0 + (item.width || item.str.length * size * 0.5),
       base,
@@ -195,7 +228,9 @@ export async function extractLayout(page: PDFPage): Promise<PageLayout> {
     const digits = (b.text.match(/\d/g) ?? []).length;
     if (nearTable && digits > b.text.length * 0.12) b.role = 'figure';
   });
-  const graphics = await graphicBoxes(page, vp.transform, W, H);
+  const graphics = ops ? graphicBoxes(ops, vp.transform, W, H) : null;
+  attachMath(blocks, pieces);
+  mergeEquationParts(blocks);
   const regions = graphics ? figureRegions(graphics, blocks, W, H) : [];
   return { width: W, height: H, raw, blocks, pieces: boxes, flow: buildFlow(blocks, regions, !!graphics, (left + right) / 2, body, W, H) };
 }
@@ -219,6 +254,98 @@ function roleOf(b: TextBlock, translatable: boolean, body: number, pageH: number
   return 'text';
 }
 
+const MATHY = /^[\s\d.,;:=+\-−–×·∗*/\\()[\]{}|<>≤≥≈∼~'′^_!˜ˆ¯˙´`¨ˇ˘~^]+$/;
+
+/**
+ * 正文中的行内公式：数学字体的片段，加上与之相邻的上下标和短小的数字、运算符片段，
+ * 按块内位置连成一段一段。整段都是公式的块（行间公式）已按图处理，这里跳过。
+ */
+function attachMath(blocks: LayoutBlock[], pieces: Piece[]): void {
+  for (const b of blocks) {
+    if (b.role !== 'text' && b.role !== 'heading') continue;
+    const pos = new Map<number, number>();
+    b.map.forEach((off, i) => {
+      if (off >= 0 && !pos.has(off)) pos.set(off, i);
+    });
+    type P = { p: Piece; s: number; e: number };
+    const inBlock: P[] = [];
+    for (const p of pieces) {
+      const s0 = pos.get(p.off);
+      if (s0 === undefined) continue;
+      let e0 = s0;
+      for (let k = 0; k < p.str.length; k++) {
+        const at = pos.get(p.off + k);
+        if (at !== undefined) e0 = Math.max(e0, at + 1);
+      }
+      inBlock.push({ p, s: s0, e: e0 });
+    }
+    inBlock.sort((x, y) => x.s - y.s);
+    const isMath = inBlock.map((x) => x.p.math);
+    if (!isMath.some(Boolean)) continue;
+    // 与公式片段相邻的上下标、短运算符也算公式
+    for (let pass = 0; pass < 2; pass++) {
+      inBlock.forEach((x, k) => {
+        if (isMath[k]) return;
+        const near = (isMath[k - 1] && x.s - inBlock[k - 1].e <= 1) || (isMath[k + 1] && inBlock[k + 1].s - x.e <= 1);
+        if (!near) return;
+        const script = x.p.size < b.size * 0.85;
+        if (script || (x.p.str.trim().length <= 4 && MATHY.test(x.p.str))) isMath[k] = true;
+      });
+    }
+    const runs: P[][] = [];
+    inBlock.forEach((x, k) => {
+      if (!isMath[k]) return;
+      const last = runs[runs.length - 1];
+      const prev = last?.[last.length - 1];
+      if (prev && x.s - prev.e <= 1 && Math.abs(x.p.base - prev.p.base) < b.size * 0.9) last.push(x);
+      else runs.push([x]);
+    });
+    const math: InlineMath[] = [];
+    for (const run of runs) {
+      const s = run[0].s;
+      const e = Math.max(...run.map((x) => x.e));
+      const main = run.filter((x) => x.p.size >= b.size * 0.85);
+      const base = main.length ? median(main.map((x) => x.p.base)) : run[0].p.base;
+      const x0 = Math.min(...run.map((x) => x.p.x0));
+      const x1 = Math.max(...run.map((x) => x.p.x1));
+      // 竖直范围至少覆盖整行字高，上下标与大号括号可以超出
+      const y0 = Math.min(base - b.size * 0.8, ...run.map((x) => x.p.base - x.p.size * 0.78));
+      const y1 = Math.max(base + b.size * 0.25, ...run.map((x) => x.p.base + x.p.size * 0.24));
+      if (x1 - x0 < 1 || e <= s) continue;
+      math.push({ s, e, x: x0 - 0.5, y: y0, w: x1 - x0 + 1, h: y1 - y0, base });
+    }
+    // 整块几乎都是公式：是行间公式，整块按图截取
+    const covered = math.reduce((n, m) => n + m.e - m.s, 0);
+    if (covered >= b.text.replace(/\s/g, '').length * 0.6 && b.text.length < 400) b.role = 'figure';
+    else if (math.length) b.math = math;
+  }
+}
+
+/**
+ * 行间公式常被切成几块（左边主体、右边超出栏宽的括号或编号）。
+ * 同一水平带上相邻的公式块合并为一块，其余标为 inside，避免被分到两栏里。
+ */
+function mergeEquationParts(blocks: LayoutBlock[]): void {
+  const eqs = blocks.filter((b) => b.role === 'figure');
+  for (const a of eqs) {
+    if (a.role !== 'figure') continue;
+    for (const b of eqs) {
+      if (b === a || b.role !== 'figure') continue;
+      const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      const gapX = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+      if (overlapY > Math.min(a.h, b.h) * 0.3 && gapX < 40) {
+        const x0 = Math.min(a.x, b.x);
+        const y0 = Math.min(a.y, b.y);
+        a.w = Math.max(a.x + a.w, b.x + b.w) - x0;
+        a.h = Math.max(a.y + a.h, b.y + b.h) - y0;
+        a.x = x0;
+        a.y = y0;
+        b.role = 'inside';
+      }
+    }
+  }
+}
+
 interface Box {
   x0: number;
   y0: number;
@@ -230,13 +357,7 @@ interface Box {
  * 页面上的图形：图片与矢量路径（填充或描边）的外接框，坐标同文字（scale = 1 的视口坐标）。
  * 来自 pdf.js 的绘制指令；取不到时返回 null（退回按空白推断图表区域）。
  */
-async function graphicBoxes(page: PDFPage, vpTransform: number[], W: number, H: number): Promise<Box[] | null> {
-  let ol: { fnArray: number[]; argsArray: unknown[] };
-  try {
-    ol = await page.getOperatorList();
-  } catch {
-    return null;
-  }
+function graphicBoxes(ol: { fnArray: number[]; argsArray: unknown[] }, vpTransform: number[], W: number, H: number): Box[] {
   const OPS = pdfjs.OPS as Record<string, number>;
   const paint = new Set([OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
   const images = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintImageXObjectRepeat, OPS.paintSolidColorImageMask, OPS.paintInlineImageXObjectGroup, OPS.paintImageMaskXObjectGroup].filter((x) => x !== undefined));
@@ -377,8 +498,13 @@ function buildFlow(blocks: LayoutBlock[], regions: Box[], haveGraphics: boolean,
   const pageLeft = Math.min(...items.map((b) => b.x));
   const pageRight = Math.max(...items.map((b) => b.x + b.w));
   const minGap = Math.max(body * 2.6, 18);
-  const spans = (b: Item) => b.x < mid - b.size && b.x + b.w > mid + b.size;
-  const colOf = (b: Item): 0 | 1 | 2 => (spans(b) ? 2 : b.x + b.w / 2 < mid ? 0 : 1);
+  const spans = (b: Item) => {
+    // 行间公式可能超出栏宽：按左边起点所在的栏处理，除非确实横跨整页
+    if (b.block?.role === 'figure' && b.w < (pageRight - pageLeft) * 0.75) return false;
+    return b.x < mid - b.size && b.x + b.w > mid + b.size;
+  };
+  const leftEdgeCol = (b: Item) => (b.block?.role === 'figure' ? b.x < mid - b.size : b.x + b.w / 2 < mid);
+  const colOf = (b: Item): 0 | 1 | 2 => (spans(b) ? 2 : leftEdgeCol(b) ? 0 : 1);
   const twoCol = items.some((b) => colOf(b) !== 2);
   const crop = (x0: number, y0: number, x1: number, y1: number): FlowItem => {
     const a = Math.max(0, x0);
@@ -420,11 +546,35 @@ function buildFlow(blocks: LayoutBlock[], regions: Box[], haveGraphics: boolean,
     } else section.push(it);
   }
   flushSection(pageBottom);
+  // 截图不能盖到已经排成文字的行：与文字块重叠时，从上方或下方收缩到文字之外
+  const shown = blocks.filter((b) => b.role === 'text' || b.role === 'heading');
+  const clipped: FlowItem[] = [];
+  for (const f of flow) {
+    if (f.kind !== 'crop') {
+      clipped.push(f);
+      continue;
+    }
+    let x0 = f.x * W;
+    let x1 = (f.x + f.w) * W;
+    let y0 = f.y * H;
+    let y1 = (f.y + f.h) * H;
+    const cy = (y0 + y1) / 2;
+    for (const b of shown) {
+      const ox = Math.min(x1, b.x + b.w) - Math.max(x0, b.x);
+      if (ox <= Math.min(b.w, x1 - x0) * 0.3) continue;
+      if (b.y + b.h <= y0 || b.y >= y1) continue;
+      if (b.y + b.h / 2 < cy) y0 = Math.max(y0, b.y + b.h + 0.5);
+      else y1 = Math.min(y1, b.y - 0.5);
+    }
+    if (y1 - y0 >= 4 && x1 - x0 >= 4) clipped.push({ kind: 'crop', x: x0 / W, y: y0 / H, w: (x1 - x0) / W, h: (y1 - y0) / H });
+  }
   // 相邻的截图区域合并（同一栏、上下相接）
   const merged: FlowItem[] = [];
-  for (const f of flow) {
+  for (const f of clipped) {
     const last = merged[merged.length - 1];
-    if (f.kind === 'crop' && last?.kind === 'crop' && f.x < last.x + last.w && f.x + f.w > last.x && f.y - (last.y + last.h) < 0.015) {
+    const between = (a: { y: number; h: number }, b: { x: number; y: number; w: number }) =>
+      shown.some((t) => t.y / H >= a.y + a.h - 0.001 && (t.y + t.h) / H <= b.y + 0.001 && t.x / W < b.x + b.w && (t.x + t.w) / W > b.x);
+    if (f.kind === 'crop' && last?.kind === 'crop' && f.x < last.x + last.w && f.x + f.w > last.x && f.y - (last.y + last.h) < 0.015 && !between(last, f)) {
       const x0 = Math.min(last.x, f.x);
       const x1 = Math.max(last.x + last.w, f.x + f.w);
       last.h = Math.max(last.y + last.h, f.y + f.h) - last.y;

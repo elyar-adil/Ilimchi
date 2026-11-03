@@ -1044,6 +1044,13 @@ button.link:hover:not(:disabled) { text-decoration: underline; filter: none; }
 .rf-tr { text-align: justify; }
 .rf-missing { color: var(--ink-3); font-size: 0.85em; }
 .rf-crop { margin: 0.6em auto 1em; }
+/* 行内公式：截图嵌在文字中，原文隐藏保留（可选择、复制） */
+.rf-math { display: inline-block; position: relative; line-height: 0; margin: 0 0.06em; }
+.rf-math canvas { display: block; width: 100%; height: 100%; }
+.rf-src { position: absolute; inset: 0; overflow: hidden; color: transparent; font-size: 1px; line-height: 1px; white-space: nowrap; }
+.rf-src-tail { display: inline-block; width: 0; height: 0; overflow: hidden; color: transparent; font-size: 1px; vertical-align: top; }
+:root[data-theme="light"][data-tint="tinted"] .rf-math canvas { mix-blend-mode: multiply; }
+:root[data-theme="dark"] .rf-math canvas { filter: invert(0.88) hue-rotate(180deg); }
 .rf-crop canvas { display: block; width: 100%; height: auto; }
 :root[data-theme="light"][data-tint="tinted"] .rf-crop canvas { mix-blend-mode: multiply; }
 :root[data-theme="dark"][data-dark-style="soft"] .rf-crop canvas { filter: brightness(0.6) contrast(0.95); }

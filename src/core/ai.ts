@@ -19,10 +19,6 @@ export interface AiConfig {
   model: string;
   /** 目标语言代码，见 TARGET_LANGS；'auto' 表示跟随界面语言 */
   targetLang: string;
-  /** 重排时用 AI 识别版面（需要能看图的模型） */
-  layout?: boolean;
-  /** 识别版面用的模型；留空则用 model */
-  visionModel?: string;
 }
 
 export const TARGET_LANGS: { id: string; name: string }[] = [
@@ -39,7 +35,7 @@ const CONFIG_KEY = 'paper-reader.ai';
 /** 用户是否在设置中展开过 AI 区域；未展开时 AI 功能完全隐藏 */
 const REVEAL_KEY = 'paper-reader.ai.revealed';
 
-const DEFAULT_CONFIG: AiConfig = { baseUrl: '', model: '', targetLang: 'auto', layout: true, visionModel: '' };
+const DEFAULT_CONFIG: AiConfig = { baseUrl: '', model: '', targetLang: 'auto' };
 
 /** 实际使用的目标语言：'auto' 时跟随界面语言 */
 export function resolveTargetLang(cfg: AiConfig): string {
