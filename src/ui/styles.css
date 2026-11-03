@@ -1040,6 +1040,7 @@ button.link:hover:not(:disabled) { text-decoration: underline; filter: none; }
 .rf-text { text-align: justify; hyphens: auto; -webkit-hyphens: auto; hyphenate-character: "-"; overflow-wrap: break-word; }
 .rf-heading { font-size: 1.08em; line-height: 1.45; font-weight: 600; margin-top: 1.1em; }
 .rf-center { text-align: center; }
+.rf-caption { font-size: 0.86em; line-height: 1.6; color: var(--ink-2); }
 .rf-tr { text-align: justify; }
 .rf-missing { color: var(--ink-3); font-size: 0.85em; }
 .rf-crop { margin: 0.6em auto 1em; }

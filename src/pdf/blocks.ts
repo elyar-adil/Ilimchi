@@ -100,7 +100,8 @@ export interface PieceBox {
   bottom: number;
 }
 
-export type BlockRole = 'text' | 'heading' | 'figure' | 'skip';
+/** inside：位于图表区域内的文字（图中标注），随图一起截图 */
+export type BlockRole = 'text' | 'heading' | 'figure' | 'skip' | 'inside';
 
 export interface LayoutBlock extends TextBlock {
   /** 在 layout.blocks 中的序号 */
@@ -176,7 +177,24 @@ export async function extractLayout(page: PDFPage): Promise<PageLayout> {
   const maxBottom = Math.max(...blocks.map((b) => b.y + b.h));
   const minTop = Math.min(...blocks.map((b) => b.y));
   for (const b of numeric) if (b.y + b.h >= maxBottom - 1 || b.y <= minTop + 1) b.role = 'skip';
-  return { width: W, height: H, raw, blocks, pieces: boxes, flow: buildFlow(blocks, (left + right) / 2, body, W, H) };
+  // 页眉（"4 Z. Shen et al."、短标题）：除第一页外，最上方贴近页边的单行短文字
+  const top = blocks.filter((b) => b.role !== 'skip').reduce<LayoutBlock | null>((m, b) => (!m || b.y < m.y ? b : m), null);
+  if (page.pageNumber > 1 && top && top.role !== 'heading' && top.y < H * 0.14 && top.text.length < 90 && top.h < top.size * 1.8) {
+    // 与下方正文之间有明显空隙才算页眉
+    const below = blocks.filter((b) => b !== top && b.role !== 'skip' && b.y > top.y).reduce((m, b) => Math.min(m, b.y), Infinity);
+    if (below - (top.y + top.h) > top.size * 0.8) top.role = 'skip';
+  }
+  // 表格：紧挨着 "Table N" 图注、数字很多的块按原样截图（表格线太少时识别不出图形区域）
+  blocks.forEach((b, k) => {
+    if (b.role !== 'text' || CAPTION.test(b.text.trim())) return;
+    const neighbors = [blocks[k - 1], blocks[k + 1]].filter(Boolean);
+    const nearTable = neighbors.some((n) => /^(table|tab)\.?\s*\d/i.test(n.text.trim()) && Math.abs(n.x - b.x) < Math.max(n.w, b.w));
+    const digits = (b.text.match(/\d/g) ?? []).length;
+    if (nearTable && digits > b.text.length * 0.12) b.role = 'figure';
+  });
+  const graphics = await graphicBoxes(page, vp.transform, W, H);
+  const regions = graphics ? figureRegions(graphics, blocks, W, H) : [];
+  return { width: W, height: H, raw, blocks, pieces: boxes, flow: buildFlow(blocks, regions, !!graphics, (left + right) / 2, body, W, H) };
 }
 
 /** 块在重排视图中的角色 */
@@ -198,62 +216,217 @@ function roleOf(b: TextBlock, translatable: boolean, body: number, pageH: number
   return 'text';
 }
 
+interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 /**
- * 阅读顺序中的图表区域：同一栏内相邻两块文字之间的大段空白，通常是图、表或公式。
- * 这些区域在重排视图中按原样截图显示；截图若是空白会被丢弃。
+ * 页面上的图形：图片与矢量路径（填充或描边）的外接框，坐标同文字（scale = 1 的视口坐标）。
+ * 来自 pdf.js 的绘制指令；取不到时返回 null（退回按空白推断图表区域）。
  */
-function buildFlow(blocks: LayoutBlock[], mid: number, body: number, W: number, H: number): FlowItem[] {
-  const content = blocks.filter((b) => b.role !== 'skip');
-  if (!content.length) return [];
-  const pageTop = Math.min(...content.map((b) => b.y));
-  const pageBottom = Math.max(...content.map((b) => b.y + b.h));
-  const pageLeft = Math.min(...content.map((b) => b.x));
-  const pageRight = Math.max(...content.map((b) => b.x + b.w));
+async function graphicBoxes(page: PDFPage, vpTransform: number[], W: number, H: number): Promise<Box[] | null> {
+  let ol: { fnArray: number[]; argsArray: unknown[] };
+  try {
+    ol = await page.getOperatorList();
+  } catch {
+    return null;
+  }
+  const OPS = pdfjs.OPS as Record<string, number>;
+  const paint = new Set([OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+  const images = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintImageXObjectRepeat, OPS.paintSolidColorImageMask, OPS.paintInlineImageXObjectGroup, OPS.paintImageMaskXObjectGroup].filter((x) => x !== undefined));
+  const mul = (m1: number[], m2: number[]) => pdfjs.Util.transform(m1, m2) as number[];
+  let ctm = vpTransform.slice();
+  const stack: number[][] = [];
+  const out: Box[] = [];
+  const add = (pts: [number, number][]) => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const [x, y] of pts) {
+      const q = [x, y];
+      pdfjs.Util.applyTransform(q, ctm);
+      xs.push(q[0]);
+      ys.push(q[1]);
+    }
+    const box = { x0: Math.max(0, Math.min(...xs)), y0: Math.max(0, Math.min(...ys)), x1: Math.min(W, Math.max(...xs)), y1: Math.min(H, Math.max(...ys)) };
+    const w = box.x1 - box.x0;
+    const h = box.y1 - box.y0;
+    // 整页底色、页面边框之类的大框不算图
+    if (w <= 0 && h <= 0) return;
+    if (w * h > W * H * 0.5) return;
+    out.push(box);
+  };
+  for (let i = 0; i < ol.fnArray.length; i++) {
+    const fn = ol.fnArray[i];
+    const args = ol.argsArray[i] as unknown[];
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform) ctm = mul(ctm, args as number[]);
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(ctm);
+      const m = args?.[0] as number[] | null;
+      if (Array.isArray(m) && m.length === 6) ctm = mul(ctm, m);
+    } else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.constructPath) {
+      const op = args?.[0] as number;
+      const mm = args?.[2] as number[] | null;
+      if (paint.has(op) && mm && mm.length === 4 && mm.every(Number.isFinite)) add([[mm[0], mm[1]], [mm[2], mm[1]], [mm[0], mm[3]], [mm[2], mm[3]]]);
+    } else if (images.has(fn)) add([[0, 0], [1, 0], [0, 1], [1, 1]]);
+  }
+  return out;
+}
+
+export const CAPTION = /^(fig(ure)?|table|tab|algorithm|alg)\.?\s*[\dA-Z]/i;
+
+/**
+ * 图表区域：把相互挨着的图形合成一块，再并入落在其中或紧贴边上的短文字（图中标注、坐标轴等）。
+ * 图注（Figure 1: …）与长段落不并入；圈住长段落的框（带底色的文字框）不当作图。
+ */
+function figureRegions(graphics: Box[], blocks: LayoutBlock[], W: number, H: number): Box[] {
+  // 1) 图形聚类
+  const TOL = 10;
+  let clusters = graphics.map((g) => ({ ...g }));
+  for (let changed = true; changed; ) {
+    changed = false;
+    const next: Box[] = [];
+    for (const c of clusters) {
+      const hit = next.find((n) => c.x0 <= n.x1 + TOL && c.x1 >= n.x0 - TOL && c.y0 <= n.y1 + TOL && c.y1 >= n.y0 - TOL);
+      if (hit) {
+        hit.x0 = Math.min(hit.x0, c.x0);
+        hit.y0 = Math.min(hit.y0, c.y0);
+        hit.x1 = Math.max(hit.x1, c.x1);
+        hit.y1 = Math.max(hit.y1, c.y1);
+        changed = true;
+      } else next.push({ ...c });
+    }
+    clusters = next;
+  }
+  // 太小的（分隔线、表格横线、脚注线）不算图
+  const regions = clusters.filter((c) => c.x1 - c.x0 >= 24 && c.y1 - c.y0 >= 18 && (c.x1 - c.x0) * (c.y1 - c.y0) < W * H * 0.6);
+  const out: Box[] = [];
+  for (const r0 of regions) {
+    const r = { ...r0 };
+    const absorbed: LayoutBlock[] = [];
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const b of blocks) {
+        if (b.role === 'skip' || absorbed.includes(b) || CAPTION.test(b.text.trim())) continue;
+        const cx = b.x + b.w / 2;
+        const cy = b.y + b.h / 2;
+        const inside = cx >= r.x0 - 2 && cx <= r.x1 + 2 && cy >= r.y0 - 2 && cy <= r.y1 + 2;
+        const pad = Math.max(6, b.size * 1.2);
+        const near = b.x <= r.x1 + pad && b.x + b.w >= r.x0 - pad && b.y <= r.y1 + pad && b.y + b.h >= r.y0 - pad;
+        if (inside || (near && b.text.length < 60 && b.role !== 'heading')) {
+          absorbed.push(b);
+          r.x0 = Math.min(r.x0, b.x);
+          r.y0 = Math.min(r.y0, b.y);
+          r.x1 = Math.max(r.x1, b.x + b.w);
+          r.y1 = Math.max(r.y1, b.y + b.h);
+          changed = true;
+        }
+      }
+    }
+    if (absorbed.some((b) => b.text.length > 200)) continue;
+    for (const b of absorbed) b.role = 'inside';
+    out.push(r);
+  }
+  // 同一张图的几部分（上下几行子图）：横向重叠、纵向间隔很小的区域合并；中间夹着正文的不合并
+  const GAP = 16;
+  let merged = out.sort((a, b) => a.y0 - b.y0).map((r) => ({ ...r }));
+  for (let changed = true; changed; ) {
+    changed = false;
+    const next: Box[] = [];
+    for (const r of merged) {
+      const hit = next.find((m) => {
+        if (!(r.x0 <= m.x1 + GAP && r.x1 >= m.x0 - GAP && r.y0 <= m.y1 + GAP && r.y1 >= m.y0 - GAP)) return false;
+        // 合并后的范围里不能有正文（否则是两张图之间夹着文字）
+        const u = { x0: Math.min(m.x0, r.x0), y0: Math.min(m.y0, r.y0), x1: Math.max(m.x1, r.x1), y1: Math.max(m.y1, r.y1) };
+        return !blocks.some((b) => b.role !== 'inside' && b.role !== 'skip' && b.x + b.w / 2 > u.x0 && b.x + b.w / 2 < u.x1 && b.y + b.h / 2 > u.y0 && b.y + b.h / 2 < u.y1);
+      });
+      if (hit) {
+        hit.x0 = Math.min(hit.x0, r.x0);
+        hit.y0 = Math.min(hit.y0, r.y0);
+        hit.x1 = Math.max(hit.x1, r.x1);
+        hit.y1 = Math.max(hit.y1, r.y1);
+        changed = true;
+      } else next.push(r);
+    }
+    merged = next;
+  }
+  return merged;
+}
+
+/**
+ * 阅读顺序：横跨两栏的项（标题、通栏图）把页面分成若干段，每段内先左栏、后右栏。
+ * 图表区域整块截图；取不到绘制指令时，同一栏内相邻文字之间的大段空白也当作图表区域（空白截图会被丢弃）。
+ */
+function buildFlow(blocks: LayoutBlock[], regions: Box[], haveGraphics: boolean, mid: number, body: number, W: number, H: number): FlowItem[] {
+  type Item = { x: number; y: number; w: number; h: number; size: number; block?: LayoutBlock };
+  const items: Item[] = [
+    ...blocks.filter((b) => b.role !== 'skip' && b.role !== 'inside').map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, size: b.size, block: b })),
+    ...regions.map((r) => ({ x: r.x0, y: r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0, size: body })),
+  ].sort((a, b) => a.y - b.y || a.x - b.x);
+  if (!items.length) return [];
+  const pageTop = Math.min(...items.map((b) => b.y));
+  const pageBottom = Math.max(...items.map((b) => b.y + b.h));
+  const pageLeft = Math.min(...items.map((b) => b.x));
+  const pageRight = Math.max(...items.map((b) => b.x + b.w));
   const minGap = Math.max(body * 2.6, 18);
-  const spans = (b: TextBlock) => b.x < mid - b.size && b.x + b.w > mid + b.size;
-  const colOf = (b: TextBlock): 0 | 1 | 2 => (spans(b) ? 2 : b.x + b.w / 2 < mid ? 0 : 1);
-  const twoCol = content.some((b) => colOf(b) !== 2);
-  const crop = (x0: number, y0: number, x1: number, y1: number): FlowItem => ({ kind: 'crop', x: x0 / W, y: y0 / H, w: (x1 - x0) / W, h: (y1 - y0) / H });
+  const spans = (b: Item) => b.x < mid - b.size && b.x + b.w > mid + b.size;
+  const colOf = (b: Item): 0 | 1 | 2 => (spans(b) ? 2 : b.x + b.w / 2 < mid ? 0 : 1);
+  const twoCol = items.some((b) => colOf(b) !== 2);
+  const crop = (x0: number, y0: number, x1: number, y1: number): FlowItem => {
+    const a = Math.max(0, x0);
+    const b = Math.max(0, y0);
+    return { kind: 'crop', x: a / W, y: b / H, w: (Math.min(W, x1) - a) / W, h: (Math.min(H, y1) - b) / H };
+  };
+  const emit = (it: Item, cx0: number, cx1: number) => {
+    if (!it.block) flow.push(crop(it.x - 4, it.y - 4, it.x + it.w + 4, it.y + it.h + 4));
+    else if (it.block.role === 'figure') flow.push(crop(Math.min(cx0, it.x), it.y - 2, Math.max(cx1, it.x + it.w), it.y + it.h + 2));
+    else flow.push({ kind: 'block', i: it.block.i });
+  };
 
   const flow: FlowItem[] = [];
-  // 按通栏块切分成若干段，每段内先左栏、后右栏
-  let section: LayoutBlock[] = [];
+  let section: Item[] = [];
   let sectionTop = pageTop;
   const flushSection = (sectionBottom: number) => {
     if (!section.length) {
-      if (sectionBottom - sectionTop > minGap) flow.push(crop(pageLeft, sectionTop, pageRight, sectionBottom));
+      if (!haveGraphics && sectionBottom - sectionTop > minGap) flow.push(crop(pageLeft, sectionTop, pageRight, sectionBottom));
       return;
     }
     const cols: [number, number][] = twoCol ? [[pageLeft, mid], [mid, pageRight]] : [[pageLeft, pageRight]];
     cols.forEach(([cx0, cx1], ci) => {
       const inCol = section.filter((b) => (twoCol ? colOf(b) === ci : true));
       let cursor = sectionTop;
-      for (const b of inCol) {
-        if (b.y - cursor > minGap) flow.push(crop(cx0, cursor, cx1, b.y));
-        if (b.role === 'figure') flow.push(crop(cx0, b.y - 2, cx1, b.y + b.h + 2));
-        else if (b.role !== 'skip') flow.push({ kind: 'block', i: b.i });
-        cursor = Math.max(cursor, b.y + b.h);
+      for (const it of inCol) {
+        if (!haveGraphics && it.y - cursor > minGap) flow.push(crop(cx0, cursor, cx1, it.y));
+        emit(it, cx0, cx1);
+        cursor = Math.max(cursor, it.y + it.h);
       }
-      if (sectionBottom - cursor > minGap) flow.push(crop(cx0, cursor, cx1, sectionBottom));
+      if (!haveGraphics && sectionBottom - cursor > minGap) flow.push(crop(cx0, cursor, cx1, sectionBottom));
     });
     section = [];
   };
-  for (const b of blocks) {
-    if (b.role === 'skip') continue;
-    if (twoCol && colOf(b) === 2) {
-      flushSection(b.y);
-      if (b.role === 'figure') flow.push(crop(pageLeft, b.y - 2, pageRight, b.y + b.h + 2));
-      else flow.push({ kind: 'block', i: b.i });
-      sectionTop = b.y + b.h;
-    } else section.push(b);
+  for (const it of items) {
+    if (twoCol && colOf(it) === 2) {
+      flushSection(it.y);
+      emit(it, pageLeft, pageRight);
+      sectionTop = it.y + it.h;
+    } else section.push(it);
   }
   flushSection(pageBottom);
-  // 相邻的截图区域合并
+  // 相邻的截图区域合并（同一栏、上下相接）
   const merged: FlowItem[] = [];
   for (const f of flow) {
     const last = merged[merged.length - 1];
-    if (f.kind === 'crop' && last?.kind === 'crop' && Math.abs(last.x - f.x) < 0.01 && Math.abs(last.w - f.w) < 0.01 && f.y - (last.y + last.h) < 0.02) {
-      last.h = f.y + f.h - last.y;
+    if (f.kind === 'crop' && last?.kind === 'crop' && f.x < last.x + last.w && f.x + f.w > last.x && f.y - (last.y + last.h) < 0.015) {
+      const x0 = Math.min(last.x, f.x);
+      const x1 = Math.max(last.x + last.w, f.x + f.w);
+      last.h = Math.max(last.y + last.h, f.y + f.h) - last.y;
+      last.x = x0;
+      last.w = x1 - x0;
     } else merged.push(f.kind === 'crop' ? { ...f } : f);
   }
   return merged;

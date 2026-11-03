@@ -2,7 +2,7 @@ import { tr } from '../core/i18n';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Fragment, type ComponentChildren } from 'preact';
 import type { PDFDoc } from '../pdf/engine';
-import type { PageLayout, LayoutBlock } from '../pdf/blocks';
+import { CAPTION, type PageLayout, type LayoutBlock } from '../pdf/blocks';
 import { pageLayout } from '../pdf/layoutcache';
 import { contextOf, locateQuote } from '../core/anchor';
 import { rangesInBlock, rawRangeOf, rectsForRaw, transByBlock } from '../core/reflowmap';
@@ -255,7 +255,7 @@ function RfPage(props: {
         const Tag = first.role === 'heading' ? 'h3' : 'p';
         return (
           <div key={`b${first.i}`} class="rf-block">
-            <Tag class={`rf-${first.role}${g.translated ? ' rf-tr' : ''}${first.align === 'center' ? ' rf-center' : ''}`} lang={g.translated ? props.lang : 'en'}>
+            <Tag class={`rf-${first.role}${g.translated ? ' rf-tr' : ''}${first.align === 'center' ? ' rf-center' : ''}${CAPTION.test(first.text.trim()) ? ' rf-caption' : ''}`} lang={g.translated ? props.lang : 'en'}>
               {parts}
             </Tag>
             {notes.map((a) => (
