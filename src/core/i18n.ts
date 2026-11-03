@@ -379,5 +379,11 @@ const EN: Record<string, string> = {
   "默认字号": "Default text size",
   "字号增大": "Larger text",
   "关闭": "Close",
+  "AI 排版中": "AI layout…",
+  "AI 版面识别暂不可用（需要能看图的模型）：{msg}": "AI layout is unavailable (needs a vision-capable model): {msg}",
+  "重排版面": "Reflow layout",
+  "重排时用 AI 识别图表与段落（需要能看图的模型）": "Use AI to detect figures and paragraphs when reflowing (needs a vision-capable model)",
+  "识图模型": "Vision model",
+  "留空则使用上面的模型": "Leave empty to use the model above",
   "跟随界面语言": "Same as interface language"
 };

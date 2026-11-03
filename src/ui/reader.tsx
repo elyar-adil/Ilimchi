@@ -1103,9 +1103,12 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   };
 
   // ---------- AI 翻译 ----------
+  const [aiKeyVal, setAiKeyVal] = useState<string | null>(null);
   const checkAi = async () => {
     const cfg = getAiConfig();
-    setAiReady(!!cfg.baseUrl && !!cfg.model && (await hasAiKey(idb)));
+    const ready = !!cfg.baseUrl && !!cfg.model && (await hasAiKey(idb));
+    setAiReady(ready);
+    setAiKeyVal(ready ? await loadAiKey(idb) : null);
   };
   useEffect(() => {
     void checkAi();
@@ -1342,6 +1345,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
             jump={rfJump}
             onPage={onReflowPage}
             onSelect={onReflowSelect}
+            ai={aiReady && aiKeyVal && getAiConfig().layout !== false ? { cfg: getAiConfig(), apiKey: aiKeyVal, paperId: doc.id, version: doc.version } : null}
+            onAiError={(msg) => setTransErr(tr('AI 版面识别暂不可用（需要能看图的模型）：{msg}', { msg }))}
             onTapHl={(id, x, top, bottom) => {
               setPending(null);
               setFocusId(id);

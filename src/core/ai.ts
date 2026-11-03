@@ -19,6 +19,10 @@ export interface AiConfig {
   model: string;
   /** 目标语言代码，见 TARGET_LANGS；'auto' 表示跟随界面语言 */
   targetLang: string;
+  /** 重排时用 AI 识别版面（需要能看图的模型） */
+  layout?: boolean;
+  /** 识别版面用的模型；留空则用 model */
+  visionModel?: string;
 }
 
 export const TARGET_LANGS: { id: string; name: string }[] = [
@@ -35,7 +39,7 @@ const CONFIG_KEY = 'paper-reader.ai';
 /** 用户是否在设置中展开过 AI 区域；未展开时 AI 功能完全隐藏 */
 const REVEAL_KEY = 'paper-reader.ai.revealed';
 
-const DEFAULT_CONFIG: AiConfig = { baseUrl: '', model: '', targetLang: 'auto' };
+const DEFAULT_CONFIG: AiConfig = { baseUrl: '', model: '', targetLang: 'auto', layout: true, visionModel: '' };
 
 /** 实际使用的目标语言：'auto' 时跟随界面语言 */
 export function resolveTargetLang(cfg: AiConfig): string {
@@ -210,7 +214,18 @@ export async function translateItems(
 }
 
 /** 调用 OpenAI 兼容的 /chat/completions，返回回复文本 */
-export async function chat(cfg: AiConfig, apiKey: string, system: string, user: string, signal?: AbortSignal, temperature = 0.2): Promise<string> {
+/** 多模态消息内容（OpenAI 兼容格式） */
+export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } };
+
+export async function chat(
+  cfg: AiConfig,
+  apiKey: string,
+  system: string,
+  user: string | ContentPart[],
+  signal?: AbortSignal,
+  temperature = 0.2,
+  model = cfg.model,
+): Promise<string> {
   const base = cfg.baseUrl.trim().replace(/\/+$/, '');
   if (!/^https?:\/\//.test(base)) throw new Error(tr('服务地址必须以 http(s):// 开头'));
   const res = await fetch(`${base}/chat/completions`, {
@@ -218,7 +233,7 @@ export async function chat(cfg: AiConfig, apiKey: string, system: string, user: 
     signal,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: cfg.model,
+      model,
       temperature,
       stream: false,
       messages: [

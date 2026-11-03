@@ -111,7 +111,10 @@ export interface LayoutBlock extends TextBlock {
 }
 
 /** 重排视图中的一项：文字块，或需要按原样截图显示的区域（图、表、公式） */
-export type FlowItem = { kind: 'block'; i: number } | { kind: 'crop'; x: number; y: number; w: number; h: number };
+export type FlowItem =
+  /** role 覆盖块自己的角色；cont 表示接着上一块，属于同一段 */
+  | { kind: 'block'; i: number; role?: 'text' | 'heading' | 'caption'; cont?: boolean }
+  | { kind: 'crop'; x: number; y: number; w: number; h: number };
 
 export interface PageLayout {
   width: number;
