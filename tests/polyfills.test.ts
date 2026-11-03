@@ -47,6 +47,27 @@ describe('Safari PDF.js polyfills', () => {
     }
   });
 
+  it('installs Uint8Array.prototype.toHex when it is missing', () => {
+    const prototype = Uint8Array.prototype as Uint8Array['__proto__'] & {
+      toHex?: () => string;
+    };
+    const original = Object.getOwnPropertyDescriptor(prototype, 'toHex');
+
+    try {
+      Reflect.deleteProperty(prototype, 'toHex');
+      installStreamIter();
+
+      const toHex = new Uint8Array([0, 15, 16, 127, 128, 255]) as Uint8Array & {
+        toHex(): string;
+      };
+      expect(toHex.toHex()).toBe('000f107f80ff');
+      expect(new Uint8Array([0xaa, 0xbb]).subarray(1).toHex()).toBe('bb');
+    } finally {
+      if (original) Object.defineProperty(prototype, 'toHex', original);
+      else Reflect.deleteProperty(prototype, 'toHex');
+    }
+  });
+
   it('installs Iterator and join when the browser has no global Iterator', () => {
     const originalIterator = Object.getOwnPropertyDescriptor(globalThis, 'Iterator');
     const iteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
