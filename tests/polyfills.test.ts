@@ -76,57 +76,33 @@ describe('Safari PDF.js polyfills', () => {
     }
   });
 
-  it('installs Uint8Array.prototype.toHex when it is missing', () => {
-    const prototype = Uint8Array.prototype as unknown as {
-      toHex?: (this: Uint8Array) => string;
+  it('installs async iteration on ReadableStream when missing', async () => {
+    const prototype = ReadableStream.prototype as ReadableStream['__proto__'] & {
+      values?: (options?: { preventCancel?: boolean }) => AsyncIterator<unknown>;
     };
-    const original = Object.getOwnPropertyDescriptor(prototype, 'toHex');
+    const originalAsync = Object.getOwnPropertyDescriptor(prototype, Symbol.asyncIterator);
+    const originalValues = Object.getOwnPropertyDescriptor(prototype, 'values');
 
     try {
-      Reflect.deleteProperty(prototype, 'toHex');
+      Reflect.deleteProperty(prototype, Symbol.asyncIterator);
+      Reflect.deleteProperty(prototype, 'values');
       installStreamIter();
 
-      const toHex = new Uint8Array([0, 15, 16, 127, 128, 255]) as Uint8Array & {
-        toHex(): string;
-      };
-      expect(toHex.toHex()).toBe('000f107f80ff');
-      const sliced = new Uint8Array([0xaa, 0xbb]).subarray(1) as Uint8Array & {
-        toHex(): string;
-      };
-      expect(sliced.toHex()).toBe('bb');
+      const stream = new ReadableStream<number>({
+        start(controller) {
+          controller.enqueue(7);
+          controller.close();
+        },
+      });
+      const iterator = stream[Symbol.asyncIterator]();
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 7 });
+      await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+      await iterator.return?.();
     } finally {
-      if (original) Object.defineProperty(prototype, 'toHex', original);
-      else Reflect.deleteProperty(prototype, 'toHex');
-    }
-  });
-
-  it('installs Iterator and join when the browser has no global Iterator', () => {
-    const originalIterator = Object.getOwnPropertyDescriptor(globalThis, 'Iterator');
-    const iteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
-    const originalJoin = Object.getOwnPropertyDescriptor(iteratorPrototype, 'join');
-
-    try {
-      Reflect.deleteProperty(globalThis, 'Iterator');
-      if (originalJoin) Reflect.deleteProperty(iteratorPrototype, 'join');
-
-      installStreamIter();
-
-      const shim = (globalThis as typeof globalThis & {
-        Iterator?: { prototype: object };
-      }).Iterator;
-      expect(shim).toBeDefined();
-      expect(shim?.prototype).toBe(iteratorPrototype);
-
-      const iterator = new Set(['one', 'two']).values() as unknown as {
-        join(separator?: string): string;
-      };
-      expect(iterator.join('/')).toBe('one/two');
-    } finally {
-      if (originalJoin) Object.defineProperty(iteratorPrototype, 'join', originalJoin);
-      else Reflect.deleteProperty(iteratorPrototype, 'join');
-
-      if (originalIterator) Object.defineProperty(globalThis, 'Iterator', originalIterator);
-      else Reflect.deleteProperty(globalThis, 'Iterator');
+      if (originalAsync) Object.defineProperty(prototype, Symbol.asyncIterator, originalAsync);
+      else Reflect.deleteProperty(prototype, Symbol.asyncIterator);
+      if (originalValues) Object.defineProperty(prototype, 'values', originalValues);
+      else Reflect.deleteProperty(prototype, 'values');
     }
   });
 });
