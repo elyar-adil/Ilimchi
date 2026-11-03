@@ -1,11 +1,13 @@
 import * as pdfjs from 'pdfjs-dist';
 // 以文本形式内联 worker，使产物可以是单个 HTML 文件（不依赖额外的 .mjs 资源）
 import workerSource from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
+import { installStreamIter } from '../polyfills';
 
 let workerUrl: string | null = null;
 function ensureWorker(): void {
   if (workerUrl) return;
-  workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+  // 解析线程中同样补上 ReadableStream 的异步迭代（Safari 缺失）
+  workerUrl = URL.createObjectURL(new Blob([`(${installStreamIter.toString()})();\n`, workerSource], { type: 'text/javascript' }));
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 }
 ensureWorker();
