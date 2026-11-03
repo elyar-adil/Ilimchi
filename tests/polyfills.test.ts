@@ -77,7 +77,7 @@ describe('Safari PDF.js polyfills', () => {
   });
 
   it('installs async iteration on ReadableStream when missing', async () => {
-    const prototype = ReadableStream.prototype as ReadableStream['__proto__'] & {
+    const prototype = ReadableStream.prototype as unknown as {
       values?: (options?: { preventCancel?: boolean }) => AsyncIterator<unknown>;
     };
     const originalAsync = Object.getOwnPropertyDescriptor(prototype, Symbol.asyncIterator);
