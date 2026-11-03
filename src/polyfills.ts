@@ -3,26 +3,32 @@
  * This function is intentionally self-contained because it is serialized into
  * the PDF worker (see src/pdf/engine.ts) as well as run in the main thread.
  */
-type Upsertable = { prototype: { getOrInsertComputed?: unknown } };
-for (const C of [Map, WeakMap] as unknown as Upsertable[]) {
-  if (typeof C.prototype.getOrInsertComputed !== 'function') {
-    Object.defineProperty(C.prototype, 'getOrInsertComputed', {
-      configurable: true,
-      writable: true,
-      value: function getOrInsertComputed(this: Map<unknown, unknown>, key: unknown, compute: (k: unknown) => unknown) {
-        if (!this.has(key)) this.set(key, compute(key));
-        return this.get(key);
-      },
-    });
-  }
-}
-
 /**
  * pdf.js 6 calls Promise.withResolvers(), Promise.try(), and
  * Iterator.prototype.join(), and uses async iteration over ReadableStream.
  * Older Safari versions may lack these APIs. Install them before pdf.js runs.
  */
 export function installStreamIter(): void {
+  // Map/WeakMap upsert helpers are required by pdf.js 6. Keep this code inside
+  // the function because the same function source is injected into the worker.
+  const upsertableCollections = [Map, WeakMap] as unknown as Array<{
+    prototype: {
+      getOrInsertComputed?: (key: unknown, compute: (key: unknown) => unknown) => unknown;
+    };
+  }>;
+  for (const Collection of upsertableCollections) {
+    if (typeof Collection.prototype.getOrInsertComputed !== 'function') {
+      Object.defineProperty(Collection.prototype, 'getOrInsertComputed', {
+        configurable: true,
+        writable: true,
+        value: function getOrInsertComputed(this: Map<unknown, unknown>, key: unknown, compute: (key: unknown) => unknown) {
+          if (!this.has(key)) this.set(key, compute(key));
+          return this.get(key);
+        },
+      });
+    }
+  }
+
   const scope = globalThis as typeof globalThis & {
     Iterator?: { prototype: Record<PropertyKey, unknown> };
     ReadableStream?: { prototype: Record<PropertyKey, unknown> };
@@ -108,8 +114,8 @@ export function installStreamIter(): void {
   // pdf.js page.getTextContent(), which consumes streams with for-await-of.
   // Uint8Array.prototype.toHex is used by PDF.js to calculate document
   // fingerprints. It is missing in older Safari releases.
-  const uint8ArrayPrototype = Uint8Array.prototype as Uint8Array['__proto__'] & {
-    toHex?: () => string;
+  const uint8ArrayPrototype = Uint8Array.prototype as unknown as {
+    toHex?: (this: Uint8Array) => string;
   };
   if (typeof uint8ArrayPrototype.toHex !== 'function') {
     Object.defineProperty(uint8ArrayPrototype, 'toHex', {
