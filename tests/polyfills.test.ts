@@ -27,6 +27,26 @@ describe('Safari PDF.js polyfills', () => {
     }
   });
 
+  it('installs Promise.try when it is missing and forwards errors', async () => {
+    const original = Object.getOwnPropertyDescriptor(Promise, 'try');
+
+    try {
+      Reflect.deleteProperty(Promise, 'try');
+      installStreamIter();
+
+      const promiseTry = (Promise as unknown as {
+        try?: <T>(callback: () => T | PromiseLike<T>) => Promise<Awaited<T>>;
+      }).try;
+
+      expect(typeof promiseTry).toBe('function');
+      await expect(promiseTry!(() => 42)).resolves.toBe(42);
+      await expect(promiseTry!(() => { throw new Error('expected'); })).rejects.toThrow('expected');
+    } finally {
+      if (original) Object.defineProperty(Promise, 'try', original);
+      else Reflect.deleteProperty(Promise, 'try');
+    }
+  });
+
   it('installs Iterator and join when the browser has no global Iterator', () => {
     const originalIterator = Object.getOwnPropertyDescriptor(globalThis, 'Iterator');
     const iteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
