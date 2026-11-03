@@ -18,9 +18,9 @@ for (const C of [Map, WeakMap] as unknown as Upsertable[]) {
 }
 
 /**
- * pdf.js 6 calls Promise.withResolvers() and Iterator.prototype.join(),
- * and uses async iteration over ReadableStream. Older Safari versions may
- * lack these APIs. Install them before pdf.js is evaluated.
+ * pdf.js 6 calls Promise.withResolvers(), Promise.try(), and
+ * Iterator.prototype.join(), and uses async iteration over ReadableStream.
+ * Older Safari versions may lack these APIs. Install them before pdf.js runs.
  */
 export function installStreamIter(): void {
   const scope = globalThis as typeof globalThis & {
@@ -48,6 +48,25 @@ export function installStreamIter(): void {
           reject = rej;
         });
         return { promise, resolve, reject };
+      },
+    });
+  }
+
+  const PromiseWithTry = Promise as PromiseConstructor & {
+    try?: <T>(callback: (...args: unknown[]) => T | PromiseLike<T>, ...args: unknown[]) => Promise<Awaited<T>>;
+  };
+  if (typeof PromiseWithTry.try !== 'function') {
+    Object.defineProperty(PromiseWithTry, 'try', {
+      configurable: true,
+      writable: true,
+      value: function promiseTry<T>(callback: (...args: unknown[]) => T | PromiseLike<T>, ...args: unknown[]) {
+        return new Promise<Awaited<T>>((resolve, reject) => {
+          try {
+            resolve(callback(...args) as Awaited<T> | PromiseLike<Awaited<T>>);
+          } catch (error) {
+            reject(error);
+          }
+        });
       },
     });
   }
