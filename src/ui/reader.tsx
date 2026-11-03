@@ -486,8 +486,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
 
   /**
    * 触控与触控板手势（只作用于阅读区，不影响鼠标）：
-   * - 手指拖动：平移，松手后带惯性滑动
-   * - 双指捏合：缩放（以双指中点为中心）
+   * - 手指拖动：交给浏览器原生滚动（iOS 上自定义平移不可靠，原生滚动也更顺滑）
+   * - 双指捏合：缩放（以双指中点为中心）；Safari 用其专有的 gesture 事件，其他浏览器用指针事件
+   * - 长按文字：自定义选区；选择过程中阻止原生滚动
    * - 笔处于使用中（1.5 秒内）或大面积接触（手掌）：忽略触摸，防止误触
    * - 触控板捏合 / Ctrl+滚轮：缩放阅读区，而不是整个浏览器界面
    */
@@ -502,6 +503,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     let inertiaId = 0;
     const PALM_PX = 40;
     const PEN_GRACE_MS = 1500;
+    // Safari（iOS / iPadOS / macOS）提供 gesture 事件，捏合缩放用它最可靠
+    const safariGestures = 'ongesturestart' in window;
+    let gestureBase: { zoom: number; x: number; y: number } | null = null;
 
     const stopInertia = () => {
       if (inertiaId) cancelAnimationFrame(inertiaId);
@@ -728,14 +732,16 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       if (!prev) return;
       const cur = { x: e.clientX, y: e.clientY };
       touches.set(e.pointerId, cur);
+      // 单指触摸由浏览器原生滚动；只有触控笔拖动空白处时才手动平移
       if (touches.size === 1) {
+        if (e.pointerType === 'touch') return;
         el.scrollTop -= cur.y - prev.y;
         el.scrollLeft -= cur.x - prev.x;
         samples.push({ t: performance.now(), x: cur.x, y: cur.y });
         if (samples.length > 12) samples.shift();
         return;
       }
-      if (touches.size === 2 && pinch) {
+      if (touches.size === 2 && pinch && !safariGestures) {
         const c = centroid();
         const box = el.getBoundingClientRect();
         zoomLive(pinch.zoom * (dist() / pinch.dist), c.x - box.left, c.y - box.top);
@@ -767,7 +773,37 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         commitZoom();
         samples = [];
       }
-      if (touches.size === 0 && !wasPinch) startInertia();
+      if (touches.size === 0 && !wasPinch && e.pointerType !== 'touch') startInertia();
+    };
+
+    // 选择文字或双指缩放时，阻止原生滚动（必须是非被动监听才能生效）
+    const onTouchMove = (e: TouchEvent) => {
+      const selecting = [...candidates.values()].some((c) => c.mode === 'selecting' || c.mode === 'adjusting');
+      if (selecting || (!safariGestures && e.touches.length >= 2)) e.preventDefault();
+    };
+    type GestureEvt = Event & { scale: number; clientX: number; clientY: number };
+    const onGestureStart = (ev: Event) => {
+      const e = ev as GestureEvt;
+      e.preventDefault();
+      const box = el.getBoundingClientRect();
+      gestureBase = {
+        zoom: gesture.current ? gesture.current.z0 * gesture.current.k : zoomRef.current,
+        x: (e.clientX ?? box.left + box.width / 2) - box.left,
+        y: (e.clientY ?? box.top + box.height / 2) - box.top,
+      };
+      for (const candidate of candidates.values()) if (candidate.timer !== undefined) window.clearTimeout(candidate.timer);
+      candidates.clear();
+    };
+    const onGestureChange = (ev: Event) => {
+      const e = ev as GestureEvt;
+      e.preventDefault();
+      if (gestureBase) zoomLive(gestureBase.zoom * e.scale, gestureBase.x, gestureBase.y);
+    };
+    const onGestureEnd = (ev: Event) => {
+      ev.preventDefault();
+      if (!gestureBase) return;
+      gestureBase = null;
+      commitZoom();
     };
 
     const onContextMenu = (e: Event) => {
@@ -788,7 +824,17 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('contextmenu', onContextMenu);
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    if (safariGestures) {
+      el.addEventListener('gesturestart', onGestureStart);
+      el.addEventListener('gesturechange', onGestureChange);
+      el.addEventListener('gestureend', onGestureEnd);
+    }
     return () => {
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('gesturestart', onGestureStart);
+      el.removeEventListener('gesturechange', onGestureChange);
+      el.removeEventListener('gestureend', onGestureEnd);
       for (const candidate of candidates.values()) {
         if (candidate.timer !== undefined) window.clearTimeout(candidate.timer);
         if (candidate.handleEl) candidate.handleEl.style.pointerEvents = '';

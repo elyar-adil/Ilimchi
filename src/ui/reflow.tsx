@@ -60,6 +60,8 @@ export function Reflow(p: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [layouts, setLayouts] = useState<(PageLayout | null)[]>([]);
   const [loaded, setLoaded] = useState(0);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [retry, setRetry] = useState(0);
   const restored = useRef(false);
 
   // 依次分析每一页（只提取文字，速度很快）
@@ -70,21 +72,32 @@ export function Reflow(p: Props) {
     restored.current = false;
     void (async () => {
       const out: (PageLayout | null)[] = [];
+      const errs: string[] = [];
       for (let n = 1; n <= p.pages; n++) {
-        try {
-          out.push(await pageLayout(p.pdf, n));
-        } catch {
-          out.push(null);
+        let layout: PageLayout | null = null;
+        // 偶发失败（例如移动端内存紧张时 PDF 解析线程繁忙）重试一次
+        for (let attempt = 0; attempt < 2 && !layout; attempt++) {
+          try {
+            layout = await pageLayout(p.pdf, n);
+          } catch (e) {
+            errs[n - 1] = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+            console.error(`第 ${n} 页重排失败`, e);
+            if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+          }
         }
+        out.push(layout);
         if (cancelled) return;
         if (n % 4 === 0 || n === p.pages) setLoaded(n);
       }
-      if (!cancelled) setLayouts(out);
+      if (!cancelled) {
+        setErrors(errs);
+        setLayouts(out);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [p.pdf, p.pages]);
+  }, [p.pdf, p.pages, retry]);
 
   // 打开时回到阅读位置
   useLayoutEffect(() => {
@@ -161,7 +174,16 @@ export function Reflow(p: Props) {
       <div class="rf-doc">
         {layouts.map((layout, idx) => {
           const page = idx + 1;
-          if (!layout) return <section key={page} data-page={page} class="rf-page"><p class="rf-missing">{tr('第 {n} 页无法重排', { n: page })}</p></section>;
+          if (!layout)
+            return (
+              <section key={page} data-page={page} class="rf-page">
+                <p class="rf-missing">
+                  {tr('第 {n} 页无法重排', { n: page })}
+                  {errors[idx] ? `（${errors[idx]}）` : ''}{' '}
+                  <button class="ghost small" onClick={() => setRetry((r) => r + 1)}>{tr('重试')}</button>
+                </p>
+              </section>
+            );
           return (
             <RfPage
               key={page}
