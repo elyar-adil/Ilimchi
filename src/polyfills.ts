@@ -1,22 +1,16 @@
 /**
- * Compatibility helpers required by pdf.js 6 on Safari.
- * This function is intentionally self-contained because it is serialized into
- * the PDF worker (see src/pdf/engine.ts) as well as run in the main thread.
- */
-/**
- * pdf.js 6 calls Promise.withResolvers(), Promise.try(), and
- * Iterator.prototype.join(), and uses async iteration over ReadableStream.
- * Older Safari versions may lack these APIs. Install them before pdf.js runs.
+ * Runtime compatibility needed by PDF.js on older Safari releases.
+ * Keep this function self-contained: src/pdf/engine.ts serializes it into
+ * the PDF worker so the main thread and worker receive the same polyfills.
  */
 export function installStreamIter(): void {
-  // Map/WeakMap upsert helpers are required by pdf.js 6. Keep this code inside
-  // the function because the same function source is injected into the worker.
-  const upsertableCollections = [Map, WeakMap] as unknown as Array<{
+  // PDF.js uses Map/WeakMap.prototype.getOrInsertComputed.
+  const collections = [Map, WeakMap] as unknown as Array<{
     prototype: {
       getOrInsertComputed?: (key: unknown, compute: (key: unknown) => unknown) => unknown;
     };
   }>;
-  for (const Collection of upsertableCollections) {
+  for (const Collection of collections) {
     if (typeof Collection.prototype.getOrInsertComputed !== 'function') {
       Object.defineProperty(Collection.prototype, 'getOrInsertComputed', {
         configurable: true,
@@ -29,12 +23,8 @@ export function installStreamIter(): void {
     }
   }
 
-  const scope = globalThis as typeof globalThis & {
-    Iterator?: { prototype: Record<PropertyKey, unknown> };
-    ReadableStream?: { prototype: Record<PropertyKey, unknown> };
-  };
-
-  // Promise.withResolvers is used by the PDF.js display and worker code.
+  // These Promise helpers are used by PDF.js internals and are absent in
+  // Safari 17.2 and earlier.
   const PromiseWithResolvers = Promise as PromiseConstructor & {
     withResolvers?: <T>() => {
       promise: Promise<T>;
@@ -77,66 +67,10 @@ export function installStreamIter(): void {
     });
   }
 
-  // Older Safari has iterator objects but no global Iterator constructor.
-  // Their built-in iterator prototypes inherit from Object.prototype, so use
-  // that shared ancestor as the compatibility prototype.
-  if (!scope.Iterator) {
-    const iteratorPrototype = Object.getPrototypeOf(
-      Object.getPrototypeOf([][Symbol.iterator]()),
-    ) as Record<PropertyKey, unknown>;
-    const IteratorShim = function IteratorShim(this: object): void {
-      if (new.target === IteratorShim) {
-        throw new TypeError('Iterator is an abstract base class');
-      }
-    };
-    IteratorShim.prototype = iteratorPrototype;
-    Object.defineProperty(globalThis, 'Iterator', {
-      configurable: true,
-      enumerable: false,
-      writable: true,
-      value: IteratorShim,
-    });
-    scope.Iterator = IteratorShim;
-  }
-
-  const iteratorPrototype = scope.Iterator.prototype;
-  if (typeof iteratorPrototype.join !== 'function') {
-    Object.defineProperty(iteratorPrototype, 'join', {
-      configurable: true,
-      writable: true,
-      value: function join(this: Iterable<unknown>, separator?: string): string {
-        return Array.from(this).join(separator);
-      },
-    });
-  }
-
-  // Safari versions without ReadableStream async iteration cannot execute
-  // pdf.js page.getTextContent(), which consumes streams with for-await-of.
-  // Uint8Array.prototype.toHex is used by PDF.js to calculate document
-  // fingerprints. It is missing in older Safari releases.
-  const uint8ArrayPrototype = Uint8Array.prototype as unknown as {
-    toHex?: (this: Uint8Array) => string;
-  };
-  if (typeof uint8ArrayPrototype.toHex !== 'function') {
-    Object.defineProperty(uint8ArrayPrototype, 'toHex', {
-      configurable: true,
-      writable: true,
-      value: function toHex(this: Uint8Array): string {
-        if (!(this instanceof Uint8Array)) {
-          throw new TypeError('Uint8Array.prototype.toHex called on incompatible receiver');
-        }
-        const digits = '0123456789abcdef';
-        let result = '';
-        for (let i = 0; i < this.length; i++) {
-          const byte = this[i];
-          result += digits[(byte >>> 4) & 0x0f] + digits[byte & 0x0f];
-        }
-        return result;
-      },
-    });
-  }
-
-  const RS = scope.ReadableStream;
+  // Safari's ReadableStream async iterator is used by PDF.js text extraction.
+  const RS = (globalThis as typeof globalThis & {
+    ReadableStream?: { prototype: Record<PropertyKey, unknown> };
+  }).ReadableStream;
   if (!RS || typeof RS.prototype[Symbol.asyncIterator] === 'function') return;
 
   const values = function (this: ReadableStream, options?: { preventCancel?: boolean }) {
