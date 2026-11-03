@@ -144,7 +144,7 @@ export function PdfPage(props: Props) {
       off.height = Math.floor(vp.height * dpr);
       const offCtx = off.getContext('2d');
       if (!offCtx) return;
-      task = page.render({ canvasContext: offCtx, canvas: off, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
+      task = page.render({ canvasContext: offCtx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
       await task.promise;
       if (cancelled) return;
       canvas.width = off.width;
