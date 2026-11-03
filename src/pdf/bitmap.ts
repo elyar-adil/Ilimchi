@@ -49,6 +49,6 @@ async function render(pdf: PDFDoc, n: number): Promise<PageBitmap> {
   canvas.height = Math.floor(vp.height);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('canvas');
-  await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
   return { canvas, scale };
 }
