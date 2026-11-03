@@ -1,6 +1,6 @@
 import * as pdfjs from 'pdfjs-dist';
 // 以文本形式内联 worker，使产物可以是单个 HTML 文件（不依赖额外的 .mjs 资源）
-import workerSource from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
+import workerSource from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?raw';
 import { installStreamIter } from '../polyfills';
 
 let workerUrl: string | null = null;
