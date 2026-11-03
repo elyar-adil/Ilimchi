@@ -1,7 +1,33 @@
 import { describe, expect, it } from 'vitest';
+import { installStreamIter } from '../src/polyfills';
 
 describe('Safari PDF.js polyfills', () => {
-  it('installs Iterator and join when the browser has no global Iterator', async () => {
+  it('installs Promise.withResolvers when it is missing', async () => {
+    const original = Object.getOwnPropertyDescriptor(Promise, 'withResolvers');
+
+    try {
+      Reflect.deleteProperty(Promise, 'withResolvers');
+      installStreamIter();
+
+      const promiseWithResolvers = (Promise as unknown as {
+        withResolvers?: <T>() => {
+          promise: Promise<T>;
+          resolve: (value: T | PromiseLike<T>) => void;
+          reject: (reason?: unknown) => void;
+        };
+      }).withResolvers;
+
+      expect(typeof promiseWithResolvers).toBe('function');
+      const capability = promiseWithResolvers!<number>();
+      capability.resolve(42);
+      await expect(capability.promise).resolves.toBe(42);
+    } finally {
+      if (original) Object.defineProperty(Promise, 'withResolvers', original);
+      else Reflect.deleteProperty(Promise, 'withResolvers');
+    }
+  });
+
+  it('installs Iterator and join when the browser has no global Iterator', () => {
     const originalIterator = Object.getOwnPropertyDescriptor(globalThis, 'Iterator');
     const iteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
     const originalJoin = Object.getOwnPropertyDescriptor(iteratorPrototype, 'join');
@@ -10,7 +36,6 @@ describe('Safari PDF.js polyfills', () => {
       Reflect.deleteProperty(globalThis, 'Iterator');
       if (originalJoin) Reflect.deleteProperty(iteratorPrototype, 'join');
 
-      const { installStreamIter } = await import('../src/polyfills');
       installStreamIter();
 
       const shim = (globalThis as typeof globalThis & {
