@@ -1,5 +1,5 @@
 import { tr } from '../core/i18n';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { pdfjs, type PDFDoc } from '../pdf/engine';
 import type { Annotation, InkColor, InkShape, Rect, Shape, TextShape } from '../core/types';
 import { contextOf, locateQuote, pointInRects } from '../core/anchor';
@@ -42,6 +42,13 @@ function applyInk(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     }
   }
   ctx.putImageData(img, 0, 0);
+}
+
+/** pdf.js 4.x 用 --scale-factor 计算文字层字号与尺寸；--total-scale-factor 保留给旧样式。 */
+function applyScaleVars(el: HTMLElement | null, scale: number): void {
+  if (!el) return;
+  el.style.setProperty('--scale-factor', String(scale));
+  el.style.setProperty('--total-scale-factor', String(scale));
 }
 
 /** 页面两侧留白（像素）：默认缩窄页面以留出空间，文字框可拖入其中 */
@@ -121,24 +128,19 @@ export function PdfPage(props: Props) {
     return () => io.disconnect();
   }, [scrollRef]);
 
+  // 画布：缩放 / 主题 / 译文变化时重绘。离屏渲染完成后一次性替换，旧画面始终可见（不闪烁）。
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     let task: { promise: Promise<unknown>; cancel(): void } | null = null;
-    let tl: InstanceType<typeof pdfjs.TextLayer> | null = null;
     (async () => {
       const page = await pdf.getPage(num);
       if (cancelled) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const vp = page.getViewport({ scale });
       const canvas = canvasRef.current;
-      const layer = layerRef.current;
-      if (!canvas || !layer) return;
-      canvas.width = Math.floor(vp.width * dpr);
-      canvas.height = Math.floor(vp.height * dpr);
-      canvas.style.width = `${vp.width}px`;
-      canvas.style.height = `${vp.height}px`;
-      // 离屏渲染完成后再一次性替换画布内容：缩放时旧画面保持可见，不会出现空白帧
+      if (!canvas) return;
+      // 注意：此处不能碰 canvas.width / height，否则会立刻清空现有画面。
       const off = document.createElement('canvas');
       off.width = Math.floor(vp.width * dpr);
       off.height = Math.floor(vp.height * dpr);
@@ -147,10 +149,9 @@ export function PdfPage(props: Props) {
       task = page.render({ canvasContext: offCtx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
       await task.promise;
       if (cancelled) return;
+      // CSS 尺寸由样式（100% 填满页面）决定：布局一变，旧位图立即被拉伸到新尺寸，等新位图就绪再换成清晰的。
       canvas.width = off.width;
       canvas.height = off.height;
-      canvas.style.width = `${vp.width}px`;
-      canvas.style.height = `${vp.height}px`;
       const cctx = canvas.getContext('2d');
       cctx?.drawImage(off, 0, 0);
       if (trans && trans.length && cctx) {
@@ -167,23 +168,58 @@ export function PdfPage(props: Props) {
       // selectable text layer; on older Safari the latter can stall even when
       // the actual page drawing succeeded.
       setRendered(true);
-
-      layer.replaceChildren();
-      layer.style.setProperty('--total-scale-factor', String(scale));
-      wrapRef.current?.style.setProperty('--total-scale-factor', String(scale));
-      tl = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport: vp });
-      await tl.render();
-      if (cancelled || !wrapRef.current) return;
-      onRenderedRef.current(num, wrapRef.current, layer);
     })().catch((e: unknown) => {
       if (!cancelled && !(e instanceof Error && /cancel/i.test(e.name + e.message))) console.error(`第 ${num} 页渲染失败`, e);
     });
     return () => {
       cancelled = true;
       task?.cancel();
-      tl?.cancel();
     };
   }, [visible, scale, pdf, num, ink, trans, transMarks]);
+
+  // 文字层：每页只构建一次。缩放时 DOM 保持不动（选区不会丢），
+  // 位置用百分比、字号用 --scale-factor，随页面尺寸实时变化；这里只负责同步该变量。
+  const textLayerRef = useRef<InstanceType<typeof pdfjs.TextLayer> | null>(null);
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    let tl: InstanceType<typeof pdfjs.TextLayer> | null = null;
+    (async () => {
+      const page = await pdf.getPage(num);
+      if (cancelled) return;
+      const layer = layerRef.current;
+      if (!layer) return;
+      const vp = page.getViewport({ scale: scaleRef.current });
+      layer.replaceChildren();
+      applyScaleVars(wrapRef.current, scaleRef.current);
+      tl = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport: vp });
+      textLayerRef.current = tl;
+      await tl.render();
+      if (cancelled || !wrapRef.current) return;
+      // 构建期间若缩放过，补一次更新
+      if (scaleRef.current !== vp.scale) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+      onRenderedRef.current(num, wrapRef.current, layer);
+    })().catch((e: unknown) => {
+      if (!cancelled && !(e instanceof Error && /cancel/i.test(e.name + e.message))) console.error(`第 ${num} 页文字层失败`, e);
+    });
+    return () => {
+      cancelled = true;
+      tl?.cancel();
+      if (textLayerRef.current === tl) textLayerRef.current = null;
+    };
+  }, [visible, pdf, num]);
+
+  // 缩放：与布局变化在同一次提交里同步 CSS 变量，并让 pdf.js 重算每个 span 的横向拉伸
+  useLayoutEffect(() => {
+    applyScaleVars(wrapRef.current, scale);
+    const tl = textLayerRef.current;
+    if (!tl) return;
+    void pdf.getPage(num).then((page) => {
+      if (textLayerRef.current === tl) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+    });
+  }, [scale, pdf, num]);
 
   /** 指针坐标 → 页面比例坐标 */
   const toRatio = (e: PointerEvent | MouseEvent): [number, number] | null => {
