@@ -165,7 +165,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
                     aria-pressed={prefs.appIcon === icon.id}
                     onClick={() => update({ appIcon: icon.id })}
                   >
-                    <img src={`./icons/animal-${icon.id}.svg`} alt="" draggable={false} />
+                    <img src={`./icons/animal-${icon.id}-96.png`} alt="" draggable={false} />
                   </button>
                 ))}
               </div>

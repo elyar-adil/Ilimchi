@@ -172,35 +172,17 @@ export function applyTheme(): void {
 }
 
 
-/** 更新浏览器标签页图标与 PWA 安装清单；桌面 App 需要重新添加才能刷新图标。 */
+/** 更新浏览器标签页图标、Apple Touch Icon 与 PWA 安装清单；已安装的桌面 App 需要重新添加才能刷新图标。 */
 export function applyAppIcon(): void {
   if (typeof document === 'undefined') return;
   const stored = getPrefs().appIcon;
   const selected = APP_ICONS.some((icon) => icon.id === stored) ? stored : '01';
   const base = document.baseURI;
-  const favicon = document.querySelector<HTMLLinkElement>('#app-favicon');
-  const touchIcon = document.querySelector<HTMLLinkElement>('#app-touch-icon');
-  const manifest = document.querySelector<HTMLLinkElement>('#app-manifest');
-  if (favicon) favicon.href = new URL(`./icons/animal-${selected}.svg`, base).href;
-  if (manifest) manifest.href = new URL(`./manifest-${selected}.webmanifest`, base).href;
-
-  // Safari / iOS 对 PNG Apple Touch Icon 的兼容性最好，从统一 sprite 裁出所选头像。
-  if (touchIcon) {
-    const sprite = document.createElement('img');
-    sprite.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 180;
-      canvas.height = 180;
-      const context = canvas.getContext('2d');
-      if (!context) return;
-      const index = Number(selected) - 1;
-      context.drawImage(sprite, (index % 4) * 128, Math.floor(index / 4) * 128, 128, 128, 0, 0, 180, 180);
-      try {
-        touchIcon.href = canvas.toDataURL('image/png');
-      } catch {
-        // 保留默认 Apple Touch Icon，不影响浏览器图标与 PWA manifest。
-      }
-    };
-    sprite.src = new URL('./icons/animal-sprite.webp', base).href;
-  }
+  const set = (id: string, href: string) => {
+    const link = document.querySelector<HTMLLinkElement>(id);
+    if (link) link.href = new URL(href, base).href;
+  };
+  set('#app-favicon', `./icons/animal-${selected}-96.png`);
+  set('#app-touch-icon', `./icons/animal-${selected}-180.png`);
+  set('#app-manifest', `./manifest-${selected}.webmanifest`);
 }
