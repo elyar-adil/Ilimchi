@@ -616,9 +616,12 @@ a.row-main:hover .row-title { color: var(--pencil); }
 .hl-del:hover:not(:disabled) { background: var(--paper); color: var(--red-pencil); filter: none; }
 
 .textLayer { pointer-events: auto; }
-/* Safari 按字体的上升/下降高度绘制选区，比一行更高、相邻行互相覆盖；
-   把每个文字 span 裁成恰好一行高（文字本身是透明的，裁剪无副作用）。 */
-.textLayer span:not(.markedContent):not(.endOfContent) { height: 1em; overflow: hidden; }
+/* WebKit：原生选区背景透明，由 selpaint.ts 按行矩形自绘（见该文件说明） */
+.webkit-sel .textLayer::selection,
+.webkit-sel .textLayer *::selection { background: transparent; }
+.sel-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.sel-rect { position: absolute; border-radius: 2px; background: rgba(47, 111, 159, 0.22); }
+:root[data-theme="light"] .sel-rect { mix-blend-mode: multiply; }
 .reader[data-tool="pen"] .textLayer,
 .reader[data-tool="marker"] .textLayer,
 .reader[data-tool="eraser"] .textLayer,

@@ -8,6 +8,7 @@ import type { Tool } from './toolbar';
 import type { TransBlock } from '../core/translate';
 import { drawTranslation, type TransMarkSpan } from './translayer';
 import { attachEndOfContent } from './endofcontent';
+import { installSelectionPaint } from './selpaint';
 
 export interface DraftText {
   page: number;
@@ -201,6 +202,7 @@ export function PdfPage(props: Props) {
       await tl.render();
       if (cancelled || !wrapRef.current) return;
       detach = attachEndOfContent(layer);
+      installSelectionPaint();
       // 构建期间若缩放过，补一次更新
       if (scaleRef.current !== vp.scale) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
       onRenderedRef.current(num, wrapRef.current, layer);
@@ -366,6 +368,7 @@ export function PdfPage(props: Props) {
         )}
       </div>
       <div class="textLayer" ref={layerRef} />
+      <div class="sel-layer" aria-hidden="true" />
       {props.touchSelection?.page === num && props.touchSelection.rects.length > 0 && (() => {
         const rects = props.touchSelection.rects;
         const first = rects[0];
