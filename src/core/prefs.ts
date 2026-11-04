@@ -1,25 +1,50 @@
 import type { HighlightColor, InkColor } from './types';
 
-/** 配色：只改变强调色（选中、按钮、高亮提示等），与浅色/深色模式相互独立 */
-export type AccentId = 'pencil' | 'sage' | 'ochre' | 'plum' | 'graphite';
-
+/**
+ * 主题 = 应用图标：每个图标对应一套配色，只由一个色相（h）与饱和度（s）派生——
+ * 强调色、纸面、侧栏与桌面底色全部由此计算，浅色/深色各自取值。
+ */
 export type AppIconId = '01' | '02' | '03' | '04' | '05' | '06' | '07' | '08' | '09' | '10' | '11' | '12';
-export const APP_ICONS: { id: AppIconId; label: string }[] = [
-  { id: '01', label: '图标 01' }, { id: '02', label: '图标 02' },
-  { id: '03', label: '图标 03' }, { id: '04', label: '图标 04' },
-  { id: '05', label: '图标 05' }, { id: '06', label: '图标 06' },
-  { id: '07', label: '图标 07' }, { id: '08', label: '图标 08' },
-  { id: '09', label: '图标 09' }, { id: '10', label: '图标 10' },
-  { id: '11', label: '图标 11' }, { id: '12', label: '图标 12' },
+export interface AppTheme { id: AppIconId; name: string; h: number; s: number }
+export const APP_ICONS: AppTheme[] = [
+  { id: '01', name: '暖杏', h: 31, s: 0.6 },
+  { id: '02', name: '夜蓝', h: 220, s: 0.45 },
+  { id: '03', name: '青苔', h: 78, s: 0.3 },
+  { id: '04', name: '薰衣草', h: 253, s: 0.35 },
+  { id: '05', name: '晴空', h: 210, s: 0.55 },
+  { id: '06', name: '暮紫', h: 257, s: 0.25 },
+  { id: '07', name: '暖橘', h: 30, s: 0.7 },
+  { id: '08', name: '湖青', h: 180, s: 0.35 },
+  { id: '09', name: '樱粉', h: 350, s: 0.55 },
+  { id: '10', name: '夜空', h: 230, s: 0.35 },
+  { id: '11', name: '雾灰', h: 235, s: 0.15 },
+  { id: '12', name: '琥珀', h: 35, s: 0.7 },
 ];
 
-export const ACCENTS: { id: AccentId; name: string; light: string; dark: string }[] = [
-  { id: 'pencil', name: '铅笔蓝', light: '#2f6f9f', dark: '#86b6da' },
-  { id: 'sage', name: '墨绿', light: '#3b6e56', dark: '#8fc4a6' },
-  { id: 'ochre', name: '赭石', light: '#9a5b2e', dark: '#dba878' },
-  { id: 'plum', name: '梅紫', light: '#6d4c8c', dark: '#bca3dc' },
-  { id: 'graphite', name: '石墨', light: '#3f444b', dark: '#c9ced6' },
-];
+function hsl(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return Math.round((l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255);
+  };
+  return `#${[f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** 某个主题在浅色/深色下的配色。 */
+export function themeColors(theme: AppTheme, dark: boolean) {
+  const tint = Math.min(0.6, Math.max(0.15, theme.s));
+  if (dark) {
+    const t = tint * 0.28;
+    return {
+      accent: hsl(theme.h, Math.min(0.6, theme.s + 0.12), 0.72),
+      paper: hsl(theme.h, t, 0.125), index: hsl(theme.h, t, 0.105), desk: hsl(theme.h, t, 0.085),
+    };
+  }
+  return {
+    accent: hsl(theme.h, Math.min(0.6, theme.s + 0.12), 0.38),
+    paper: hsl(theme.h, tint, 0.975), index: hsl(theme.h, tint, 0.948), desk: hsl(theme.h, tint * 0.8, 0.905),
+  };
+}
 
 /** 论文推送到 GitHub 的频率：间隔内的多次修改合并为一次提交 */
 export type SyncInterval = 'live' | 'm1' | 'm5' | 'm15' | 'h1' | 'manual';
@@ -79,10 +104,8 @@ export interface Prefs {
   sort: SortKey;
   /** 提交到 GitHub 的频率（仅本设备） */
   syncInterval: SyncInterval;
-  /** 应用图标主题（仅本设备） */
+  /** 主题（即应用图标，仅本设备） */
   appIcon: AppIconId;
-  /** 配色（仅本设备） */
-  accent: AccentId;
 }
 
 export const PAGE_TINTS: { name: string; hex: string }[] = [
@@ -107,7 +130,6 @@ const DEFAULTS: Prefs = {
   sort: 'recent',
   syncInterval: 'm5',
   appIcon: '01',
-  accent: 'pencil',
 };
 
 let cache: Prefs | null = null;
@@ -161,12 +183,17 @@ export function applyTheme(): void {
   root.dataset.theme = dark ? 'dark' : 'light';
   root.dataset.darkStyle = p.darkStyle;
   root.style.setProperty('--page-tint', p.pageTint);
-  // 强调色随浅色/深色取值，用内联变量覆盖样式表中的默认值
-  const accent = ACCENTS.find((a) => a.id === p.accent) ?? ACCENTS[0];
-  const hex = dark ? accent.dark : accent.light;
-  root.style.setProperty('--pencil', hex);
-  root.style.setProperty('--pencil-wash', withAlpha(hex, dark ? 0.12 : 0.09));
-  root.style.setProperty('--pencil-line', withAlpha(hex, dark ? 0.45 : 0.4));
+  // 主题（图标）决定强调色与各层底色；用内联变量覆盖样式表中的默认值
+  const theme = APP_ICONS.find((t) => t.id === p.appIcon) ?? APP_ICONS[0];
+  const c = themeColors(theme, dark);
+  root.style.setProperty('--pencil', c.accent);
+  root.style.setProperty('--pencil-wash', withAlpha(c.accent, dark ? 0.12 : 0.09));
+  root.style.setProperty('--pencil-line', withAlpha(c.accent, dark ? 0.45 : 0.4));
+  root.style.setProperty('--paper', c.paper);
+  root.style.setProperty('--index', c.index);
+  root.style.setProperty('--desk', c.desk);
+  // 独立窗口 / 浏览器的标题栏与界面同色
+  document.querySelector<HTMLMetaElement>('#app-theme-color')?.setAttribute('content', c.paper);
   // 纸面非白时才需要与 PDF 正片叠底（整页混合模式较耗性能，默认白底时跳过）
   root.dataset.tint = p.pageTint.toLowerCase() === '#ffffff' ? 'plain' : 'tinted';
 }

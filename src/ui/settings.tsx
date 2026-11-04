@@ -7,7 +7,7 @@ import {
   TARGET_LANGS, clearAiKey, getAiConfig, hasAiKey, isAiRevealed, notifyAiChanged, revealAi, saveAiKey, setAiConfig, type AiKeyMode,
 } from '../core/ai';
 import { useEffect } from 'preact/hooks';
-import { ACCENTS, APP_ICONS, getPrefs, setPrefs, PAGE_TINTS, SYNC_INTERVALS, type AccentId, type DarkStyle, type SyncInterval, type Theme } from '../core/prefs';
+import { APP_ICONS, getPrefs, setPrefs, PAGE_TINTS, SYNC_INTERVALS, type DarkStyle, type SyncInterval, type Theme } from '../core/prefs';
 import type { PaperStore } from '../core/store';
 import { useStoreRerender, useSyncStatus } from './nav';
 import { SyncBadge } from './shared';
@@ -135,14 +135,26 @@ export function Settings({ store, session, onClose, onSignOut }: {
             </div>
           </div>
           <p class="set-hint">{tr('柔和保留图片原色；反色让文字更锐利，但图片会变色；墨色为纯黑底白字，彩色图片保留颜色并压暗。')}</p>
-          <div class="set">
-            <span class="set-label">{tr('配色')}</span>
-            <div class="set-control swatches">
-              {ACCENTS.map((a) => (
-                <button class={`page-swatch ${prefs.accent === a.id ? 'on' : ''}`} style={{ background: a.light }} title={tr(a.name)} aria-label={tr(a.name)} onClick={() => update({ accent: a.id as AccentId })} />
-              ))}
+          <div class="set app-icon-set">
+            <span class="set-label">{tr('主题')}</span>
+            <div class="set-control">
+              <div class="app-icon-grid">
+                {APP_ICONS.map((t) => (
+                  <button
+                    type="button"
+                    class={`app-icon-choice ${prefs.appIcon === t.id ? 'on' : ''}`}
+                    title={tr(t.name)}
+                    aria-label={tr(t.name)}
+                    aria-pressed={prefs.appIcon === t.id}
+                    onClick={() => update({ appIcon: t.id })}
+                  >
+                    <img src={`./icons/animal-${t.id}-96.png`} alt="" draggable={false} />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
+          <p class="set-hint">{tr('图标即主题：界面配色、浏览器图标与安装图标一起更换；已添加到桌面的 App 需删除后重新添加才能显示新图标。')}</p>
           <div class="set">
             <span class="set-label">{tr('页面底色')}</span>
             <div class="set-control swatches">
@@ -152,26 +164,6 @@ export function Settings({ store, session, onClose, onSignOut }: {
             </div>
           </div>
           <p class="set-hint">{tr('页面底色只在浅色模式下生效。')}</p>
-          <div class="set app-icon-set">
-            <span class="set-label">{tr('应用图标')}</span>
-            <div class="set-control">
-              <div class="app-icon-grid">
-                {APP_ICONS.map((icon) => (
-                  <button
-                    type="button"
-                    class={`app-icon-choice ${prefs.appIcon === icon.id ? 'on' : ''}`}
-                    title={tr(icon.label)}
-                    aria-label={tr(icon.label)}
-                    aria-pressed={prefs.appIcon === icon.id}
-                    onClick={() => update({ appIcon: icon.id })}
-                  >
-                    <img src={`./icons/animal-${icon.id}-96.png`} alt="" draggable={false} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <p class="set-hint">{tr('切换图标后会更新浏览器图标与安装清单；已添加到桌面的 App 需要删除后重新添加才能显示新图标。')}</p>
         </section>
 
         <section class="group">
