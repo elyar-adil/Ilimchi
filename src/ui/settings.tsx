@@ -7,7 +7,7 @@ import {
   TARGET_LANGS, clearAiKey, getAiConfig, hasAiKey, isAiRevealed, notifyAiChanged, revealAi, saveAiKey, setAiConfig, type AiKeyMode,
 } from '../core/ai';
 import { useEffect } from 'preact/hooks';
-import { ACCENTS, getPrefs, setPrefs, PAGE_TINTS, SYNC_INTERVALS, type AccentId, type DarkStyle, type SyncInterval, type Theme } from '../core/prefs';
+import { ACCENTS, APP_ICONS, getPrefs, setPrefs, PAGE_TINTS, SYNC_INTERVALS, type AccentId, type DarkStyle, type SyncInterval, type Theme } from '../core/prefs';
 import type { PaperStore } from '../core/store';
 import { useStoreRerender, useSyncStatus } from './nav';
 import { SyncBadge } from './shared';
@@ -152,6 +152,26 @@ export function Settings({ store, session, onClose, onSignOut }: {
             </div>
           </div>
           <p class="set-hint">{tr('页面底色只在浅色模式下生效。')}</p>
+          <div class="set app-icon-set">
+            <span class="set-label">{tr('应用图标')}</span>
+            <div class="set-control">
+              <div class="app-icon-grid">
+                {APP_ICONS.map((icon) => (
+                  <button
+                    type="button"
+                    class={`app-icon-choice ${prefs.appIcon === icon.id ? 'on' : ''}`}
+                    title={tr(icon.label)}
+                    aria-label={tr(icon.label)}
+                    aria-pressed={prefs.appIcon === icon.id}
+                    onClick={() => update({ appIcon: icon.id })}
+                  >
+                    <img src={`./icons/animal-${icon.id}.svg`} alt="" draggable={false} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p class="set-hint">{tr('切换图标后会更新浏览器图标与安装清单；已添加到桌面的 App 需要删除后重新添加才能显示新图标。')}</p>
         </section>
 
         <section class="group">

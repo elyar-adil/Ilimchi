@@ -1125,3 +1125,39 @@ button.link:hover:not(:disabled) { text-decoration: underline; filter: none; }
 .rf-html a { color: var(--pencil); text-decoration: none; }
 .rf-html .ltx_tag { margin-right: 0.3em; }
 :root[data-theme="dark"] .rf-html img { filter: invert(0.88) hue-rotate(180deg); }
+
+
+/* App icon theme picker */
+.app-icon-set { align-items: flex-start; }
+.app-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 44px);
+  gap: 8px;
+}
+.app-icon-choice {
+  display: block;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 11px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color .14s ease, transform .14s ease;
+}
+.app-icon-choice img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.app-icon-choice:hover { transform: translateY(-1px); }
+.app-icon-choice.on {
+  border-color: var(--pencil);
+  box-shadow: 0 0 0 2px var(--pencil-wash);
+}
+.app-icon-choice:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 2px;
+}

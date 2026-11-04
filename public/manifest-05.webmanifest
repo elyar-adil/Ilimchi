@@ -1,0 +1,18 @@
+{
+  "name": "Ilimchi",
+  "short_name": "Ilimchi",
+  "description": "A calm reading space for research papers",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#172044",
+  "theme_color": "#172044",
+  "icons": [
+    {
+      "src": "./icons/animal-05.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

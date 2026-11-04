@@ -3,6 +3,16 @@ import type { HighlightColor, InkColor } from './types';
 /** 配色：只改变强调色（选中、按钮、高亮提示等），与浅色/深色模式相互独立 */
 export type AccentId = 'pencil' | 'sage' | 'ochre' | 'plum' | 'graphite';
 
+export type AppIconId = '01' | '02' | '03' | '04' | '05' | '06' | '07' | '08' | '09' | '10' | '11' | '12';
+export const APP_ICONS: { id: AppIconId; label: string }[] = [
+  { id: '01', label: '图标 01' }, { id: '02', label: '图标 02' },
+  { id: '03', label: '图标 03' }, { id: '04', label: '图标 04' },
+  { id: '05', label: '图标 05' }, { id: '06', label: '图标 06' },
+  { id: '07', label: '图标 07' }, { id: '08', label: '图标 08' },
+  { id: '09', label: '图标 09' }, { id: '10', label: '图标 10' },
+  { id: '11', label: '图标 11' }, { id: '12', label: '图标 12' },
+];
+
 export const ACCENTS: { id: AccentId; name: string; light: string; dark: string }[] = [
   { id: 'pencil', name: '铅笔蓝', light: '#2f6f9f', dark: '#86b6da' },
   { id: 'sage', name: '墨绿', light: '#3b6e56', dark: '#8fc4a6' },
@@ -69,6 +79,8 @@ export interface Prefs {
   sort: SortKey;
   /** 提交到 GitHub 的频率（仅本设备） */
   syncInterval: SyncInterval;
+  /** 应用图标主题（仅本设备） */
+  appIcon: AppIconId;
   /** 配色（仅本设备） */
   accent: AccentId;
 }
@@ -94,6 +106,7 @@ const DEFAULTS: Prefs = {
   markerColor: 'yellow',
   sort: 'recent',
   syncInterval: 'm5',
+  appIcon: '01',
   accent: 'pencil',
 };
 
@@ -156,4 +169,38 @@ export function applyTheme(): void {
   root.style.setProperty('--pencil-line', withAlpha(hex, dark ? 0.45 : 0.4));
   // 纸面非白时才需要与 PDF 正片叠底（整页混合模式较耗性能，默认白底时跳过）
   root.dataset.tint = p.pageTint.toLowerCase() === '#ffffff' ? 'plain' : 'tinted';
+}
+
+
+/** 更新浏览器标签页图标与 PWA 安装清单；桌面 App 需要重新添加才能刷新图标。 */
+export function applyAppIcon(): void {
+  if (typeof document === 'undefined') return;
+  const stored = getPrefs().appIcon;
+  const selected = APP_ICONS.some((icon) => icon.id === stored) ? stored : '01';
+  const base = document.baseURI;
+  const favicon = document.querySelector<HTMLLinkElement>('#app-favicon');
+  const touchIcon = document.querySelector<HTMLLinkElement>('#app-touch-icon');
+  const manifest = document.querySelector<HTMLLinkElement>('#app-manifest');
+  if (favicon) favicon.href = new URL(`./icons/animal-${selected}.svg`, base).href;
+  if (manifest) manifest.href = new URL(`./manifest-${selected}.webmanifest`, base).href;
+
+  // Safari / iOS 对 PNG Apple Touch Icon 的兼容性最好，从统一 sprite 裁出所选头像。
+  if (touchIcon) {
+    const sprite = document.createElement('img');
+    sprite.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 180;
+      canvas.height = 180;
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      const index = Number(selected) - 1;
+      context.drawImage(sprite, (index % 4) * 128, Math.floor(index / 4) * 128, 128, 128, 0, 0, 180, 180);
+      try {
+        touchIcon.href = canvas.toDataURL('image/png');
+      } catch {
+        // 保留默认 Apple Touch Icon，不影响浏览器图标与 PWA manifest。
+      }
+    };
+    sprite.src = new URL('./icons/animal-sprite.webp', base).href;
+  }
 }

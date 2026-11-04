@@ -2,7 +2,7 @@ import { subscribeLanguage, tr } from '../core/i18n';
 import { useEffect, useState } from 'preact/hooks';
 import { restore, signOut, unlock, type Config, type Session } from '../core/auth';
 import { endSession, idb, startSession, vault } from '../core/services';
-import { applyTheme, subscribePrefs } from '../core/prefs';
+import { applyTheme, applyAppIcon, subscribePrefs } from '../core/prefs';
 import type { PaperStore } from '../core/store';
 import { Login, Unlock } from './login';
 import { Library } from './library';
@@ -23,8 +23,12 @@ export function App() {
   const [, setLanguageVersion] = useState(0);
 
   useEffect(() => {
-    applyTheme();
-    return subscribePrefs(applyTheme);
+    const applyAppearance = () => {
+      applyTheme();
+      applyAppIcon();
+    };
+    applyAppearance();
+    return subscribePrefs(applyAppearance);
   }, []);
 
   useEffect(() => subscribeLanguage(() => setLanguageVersion((v) => v + 1)), []);
