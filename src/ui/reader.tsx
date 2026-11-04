@@ -144,7 +144,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
-  const zoomAnchor = useRef<{ ratio: number; y: number } | null>(null);
+  /** 缩放提交后要还原的锚点：纵向按文档比例，横向按相对页面中心的偏移（已按新倍数换算） */
+  const zoomAnchor = useRef<{ ratio: number; y: number; ax: number; dx: number } | null>(null);
   const [width, setWidth] = useState(800);
   const [showSide, setShowSide] = useState(() => getPrefs().sidebar);
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -400,7 +401,9 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const scale = baseScale * zoom;
   const layout = useMemo(() => {
     if (load.kind !== 'ready') return { tops: [] as number[], heights: [] as number[], widths: [] as number[], total: 0 };
-    let y = GAP;
+    // 页面间距随缩放同比变化：整篇文档严格等比，缩放预览与提交后的布局才逐像素一致
+    const gap = GAP * zoom;
+    let y = gap;
     const tops: number[] = [];
     const heights: number[] = [];
     const widths: number[] = [];
@@ -408,10 +411,15 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       tops.push(y);
       heights.push(s.h * scale);
       widths.push(s.w * scale);
-      y += s.h * scale + GAP;
+      y += s.h * scale + gap;
     }
     return { tops, heights, widths, total: y };
-  }, [load, scale]);
+  }, [load, scale, zoom]);
+  // 页面宽于视口时要能横向滚动：内容区最小宽度 = 最宽页面 + 两侧留白（缩放 1 时恰好等于视口宽度）
+  const pageExtra = 48 + 2 * sideRoom;
+  const maxPageW = layout.widths.reduce((m, w) => Math.max(m, w), 0);
+  const geomRef = useRef({ maxW: 0, extra: 0 });
+  geomRef.current = { maxW: maxPageW, extra: pageExtra };
 
   const layoutTotal = layout.total;
   const layoutTotalRef = useRef(0);
@@ -422,7 +430,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
    * 缩放分两步：手势进行中只改变 .pages 的 CSS 变换（不重排、不重新栅格化），
    * 手势结束（或滚轮停止）后按最终倍数重新排版，并保持锚点位置不动。
    */
-  const gesture = useRef<{ z0: number; k: number; ox: number; oy: number; anchorY: number } | null>(null);
+  const gesture = useRef<{ z0: number; k: number; ox: number; oy: number; ax: number; sl0: number; anchorY: number } | null>(null);
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTransform = () => {
@@ -433,19 +441,32 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     p.style.willChange = '';
   };
 
-  /** 以视口坐标 (ax, ay) 为中心，把缩放目标设为 target（仅变换）。 */
+  /**
+   * 以视口坐标 (ax, ay) 为中心，把缩放目标设为 target（仅变换）。
+   * 预览必须与提交后的真实布局一致，否则提交那一帧内容会跳：
+   * - 纵向：以指针所在点为不动点缩放；
+   * - 横向：页面始终在内容区正中，内容区宽度 = max(视口宽, 最宽页面 + 留白)，
+   *   提交后滚动位置被限制在 [0, 内容宽 - 视口宽]，这里提前按同样的规则算出偏移。
+   */
   const zoomLive = (target: number, ax: number, ay: number) => {
     const el = scrollRef.current;
     const p = pagesRef.current;
     if (!el || !p) return;
     if (!gesture.current) {
-      gesture.current = { z0: zoomRef.current, k: 1, ox: el.scrollLeft + ax, oy: el.scrollTop + ay, anchorY: ay };
+      gesture.current = { z0: zoomRef.current, k: 1, ox: el.scrollLeft + ax, oy: el.scrollTop + ay, ax, sl0: el.scrollLeft, anchorY: ay };
     }
     const g = gesture.current;
     g.k = clampZoom(target) / g.z0;
+    const { maxW, extra } = geomRef.current;
+    const cw = el.clientWidth;
+    const w0 = Math.max(cw, maxW + extra);
+    const w1 = Math.max(cw, maxW * g.k + extra);
+    const sl1 = Math.min(Math.max(0, w1 / 2 + (g.ox - w0 / 2) * g.k - g.ax), Math.max(0, w1 - cw));
+    const tx = w1 / 2 - (g.k * w0) / 2 + (g.sl0 - sl1);
+    const ty = g.oy * (1 - g.k);
     p.style.willChange = 'transform';
-    p.style.transformOrigin = `${g.ox}px ${g.oy}px`;
-    p.style.transform = `scale(${g.k})`;
+    p.style.transformOrigin = '0 0';
+    p.style.transform = `translate(${tx}px, ${ty}px) scale(${g.k})`;
     scheduleCommit(160);
   };
 
@@ -468,7 +489,11 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
       clearTransform();
       return;
     }
-    zoomAnchor.current = { ratio: g.oy / Math.max(1, layoutTotalRef.current), y: g.anchorY };
+    const el = scrollRef.current;
+    const { maxW, extra } = geomRef.current;
+    const w0 = Math.max(el?.clientWidth ?? 0, maxW + extra);
+    zoomAnchor.current = { ratio: g.oy / Math.max(1, layoutTotalRef.current), y: g.anchorY, ax: g.ax, dx: (g.ox - w0 / 2) * (z / g.z0) };
+    zoomRef.current = z;
     setZoom(z);
   };
 
@@ -486,6 +511,8 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
     if (a && el) {
       zoomAnchor.current = null;
       el.scrollTop = Math.max(0, a.ratio * layoutTotal - a.y);
+      const w1 = pagesRef.current?.offsetWidth ?? el.scrollWidth;
+      el.scrollLeft = Math.min(Math.max(0, w1 / 2 + a.dx - a.ax), Math.max(0, w1 - el.clientWidth));
     }
     clearTransform();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1436,7 +1463,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           )}
 
           {loaded && (
-            <div class="pages" ref={pagesRef} style={{ height: `${layout.total}px` }}>
+            <div class="pages" ref={pagesRef} style={{ height: `${layout.total}px`, minWidth: `${maxPageW + pageExtra}px` }}>
               {loaded.sizes.map((_, i) => (
                 <PdfPage
                   key={i}
