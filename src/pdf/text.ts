@@ -7,7 +7,7 @@ import type { Rect } from '../core/types';
  * 因此同一页在不同缩放、不同设备上得到的偏移完全一致。
  */
 
-function textNodes(root: Node): Text[] {
+export function textNodes(root: Node): Text[] {
   const out: Text[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n as Text);
@@ -175,4 +175,17 @@ export function selectionToPending(sel: Selection): PendingSelection | null {
 
 function elementOf(n: Node): Element | null {
   return n.nodeType === Node.ELEMENT_NODE ? (n as Element) : n.parentElement;
+}
+
+/** raw 字符偏移 → DOM 位置（文本节点 + 节点内偏移）。 */
+export function positionForOffset(layer: HTMLElement, offset: number): { node: Text; offset: number } | null {
+  let acc = 0;
+  let last: Text | null = null;
+  for (const t of textNodes(layer)) {
+    const len = t.data.length;
+    if (offset <= acc + len) return { node: t, offset: Math.max(0, offset - acc) };
+    acc += len;
+    last = t;
+  }
+  return last ? { node: last, offset: last.data.length } : null;
 }

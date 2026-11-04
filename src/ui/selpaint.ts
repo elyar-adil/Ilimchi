@@ -1,4 +1,5 @@
 import { rawOffsetOf, rawText, rectsForOffsets } from '../pdf/text';
+import { installPointerSelection } from './selectdrag';
 
 /**
  * WebKit（Safari）自己绘制选区的方式与 pdf.js 的文字层不相容：
@@ -52,6 +53,7 @@ export function installSelectionPaint(): void {
   if (installed || !needsSelectionPaint()) return;
   installed = true;
   document.documentElement.classList.add('webkit-sel');
+  installPointerSelection();
   let raf = 0;
   const schedule = () => {
     if (raf) return;
