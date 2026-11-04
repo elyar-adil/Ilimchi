@@ -7,7 +7,9 @@ import { positionForOffset, textNodes } from '../pdf/text';
  * WebKit 原生命中测试找不到文字，会把选区终点落到文字层末尾，于是“把下面全选上”。
  * 这里改用几何命中：把指针位置映射到最近一行、再映射到该行里最近的字符，
  * 然后把结果写回原生 Selection，复制、高亮、批注条等下游逻辑都不用改。
- * 仅在 WebKit 的鼠标左键单击时接管；双击/三击（选词、选段）仍走原生。
+ * 仅在 WebKit 的鼠标左键单击 / 三击时接管；双击（选词）仍走原生。
+ * 三击：原生会从点击处一路选到文字层末尾（绝对定位的 span 没有“段落”边界），
+ * 这里改为只选中被点击的那一段文字（与 Blink 的行为一致）。
  */
 
 interface Item {
@@ -127,7 +129,7 @@ export function installPointerSelection(): void {
 }
 
 function onDown(e: MouseEvent): void {
-  if (e.button !== 0 || e.detail !== 1 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.button !== 0 || e.detail === 2 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
   const target = e.target as HTMLElement | null;
   const pageEl = target?.closest<HTMLElement>('.pdf-page');
   const reader = target?.closest<HTMLElement>('.reader');
@@ -142,6 +144,13 @@ function onDown(e: MouseEvent): void {
   e.preventDefault();
   const sel = document.getSelection();
   sel?.removeAllRanges();
+  if (e.detail >= 3) {
+    if (hit && hit.dy <= hit.lineHeight * 1.5) {
+      const it = model.lines.flatMap((l) => l.items).find((i) => hit.offset >= i.start && hit.offset <= i.start + i.len);
+      if (it) sel?.setBaseAndExtent(it.node, 0, it.node, it.len);
+    }
+    return;
+  }
   // 离任何文字都太远（大块空白）：只清除选区，不开始拖选
   if (!hit || hit.dy > hit.lineHeight * 1.5) return;
 
