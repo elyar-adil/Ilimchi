@@ -7,6 +7,7 @@ import { rawOffsetAtPoint, rawText, readableSlice, rectsForOffsets } from '../pd
 import type { Tool } from './toolbar';
 import type { TransBlock } from '../core/translate';
 import { drawTranslation, type TransMarkSpan } from './translayer';
+import { attachEndOfContent } from './endofcontent';
 
 export interface DraftText {
   page: number;
@@ -186,6 +187,7 @@ export function PdfPage(props: Props) {
     if (!visible) return;
     let cancelled = false;
     let tl: InstanceType<typeof pdfjs.TextLayer> | null = null;
+    let detach: (() => void) | null = null;
     (async () => {
       const page = await pdf.getPage(num);
       if (cancelled) return;
@@ -198,6 +200,7 @@ export function PdfPage(props: Props) {
       textLayerRef.current = tl;
       await tl.render();
       if (cancelled || !wrapRef.current) return;
+      detach = attachEndOfContent(layer);
       // 构建期间若缩放过，补一次更新
       if (scaleRef.current !== vp.scale) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
       onRenderedRef.current(num, wrapRef.current, layer);
@@ -207,6 +210,7 @@ export function PdfPage(props: Props) {
     return () => {
       cancelled = true;
       tl?.cancel();
+      detach?.();
       if (textLayerRef.current === tl) textLayerRef.current = null;
     };
   }, [visible, pdf, num]);
