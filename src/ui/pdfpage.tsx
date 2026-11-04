@@ -8,7 +8,8 @@ import type { Tool } from './toolbar';
 import type { TransBlock } from '../core/translate';
 import { drawTranslation, type TransMarkSpan } from './translayer';
 import { attachEndOfContent } from './endofcontent';
-import { installSelectionPaint } from './selpaint';
+import { installSelectionPaint, needsSelectionPaint } from './selpaint';
+import { fitSpans } from './spanfit';
 
 export interface DraftText {
   page: number;
@@ -201,10 +202,17 @@ export function PdfPage(props: Props) {
       textLayerRef.current = tl;
       await tl.render();
       if (cancelled || !wrapRef.current) return;
+      // WebKit：按 PDF 给出的宽度重新校正每个 span（见 spanfit.ts）
+      if (needsSelectionPaint()) {
+        const sc = scaleRef.current;
+        if (sc !== vp.scale) tl.update({ viewport: page.getViewport({ scale: sc }) });
+        await fitSpans(page, sc, tl.textDivs, wrapRef.current);
+        if (cancelled) return;
+      }
       detach = attachEndOfContent(layer);
       installSelectionPaint();
       // 构建期间若缩放过，补一次更新
-      if (scaleRef.current !== vp.scale) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+      if (!needsSelectionPaint() && scaleRef.current !== vp.scale) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
       onRenderedRef.current(num, wrapRef.current, layer);
     })().catch((e: unknown) => {
       if (!cancelled && !(e instanceof Error && /cancel/i.test(e.name + e.message))) console.error(`第 ${num} 页文字层失败`, e);
@@ -222,8 +230,10 @@ export function PdfPage(props: Props) {
     applyScaleVars(wrapRef.current, scale);
     const tl = textLayerRef.current;
     if (!tl) return;
-    void pdf.getPage(num).then((page) => {
-      if (textLayerRef.current === tl) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+    void pdf.getPage(num).then(async (page) => {
+      if (textLayerRef.current !== tl) return;
+      tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+      if (needsSelectionPaint() && wrapRef.current) await fitSpans(page, scaleRef.current, tl.textDivs, wrapRef.current);
     });
   }, [scale, pdf, num]);
 
