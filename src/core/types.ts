@@ -53,15 +53,15 @@ export interface Progress {
 /** 参与「最后写入者胜出」合并的标量字段 */
 export type FieldName = 'title' | 'authors' | 'version' | 'url' | 'sourceUrl' | 'tags' | 'deletedAt';
 
-export type InkColor = 'ink' | 'blue' | 'red' | 'green' | 'yellow' | 'pink';
+export type InkColor = 'ink' | 'blue' | 'red' | 'green' | 'yellow' | 'pink' | 'orange' | 'purple';
 export const INK_HEX: Record<InkColor, string> = {
-  ink: '#1d2129', blue: '#2f5fd0', red: '#c0392b', green: '#2e8b57', yellow: '#ffd60a', pink: '#ff2d55',
+  ink: '#1d2129', blue: '#2f5fd0', red: '#c0392b', green: '#2e8b57', yellow: '#ffd60a', pink: '#ff2d55', orange: '#f08a24', purple: '#8e5ad7',
 };
 export const INK_KEYS = Object.keys(INK_HEX) as InkColor[];
 /** 画笔与文字可用的颜色 */
-export const PEN_COLORS: InkColor[] = ['ink', 'blue', 'red', 'green'];
+export const PEN_COLORS: InkColor[] = ['ink', 'blue', 'red', 'green', 'orange', 'purple'];
 /** 荧光笔可用的颜色 */
-export const MARKER_COLORS: InkColor[] = ['yellow', 'green', 'blue', 'pink'];
+export const MARKER_COLORS: InkColor[] = ['yellow', 'green', 'blue', 'pink', 'orange', 'purple'];
 
 /** 手绘笔迹：点坐标为页面比例（0..1） */
 export interface InkShape {

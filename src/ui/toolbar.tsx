@@ -1,4 +1,5 @@
 import { tr } from '../core/i18n';
+import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { Icon, type IconName } from './icons';
 import { INK_HEX, type InkColor } from '../core/types';
@@ -25,6 +26,8 @@ interface TopProps {
   sidebarOpen: boolean;
   onToggleSide: () => void;
   onOpenSettings: () => void;
+  /** 专注模式：隐藏所有界面，只留正文 */
+  onFocus: () => void;
   /** 是否处于重排视图 */
   reflow: boolean;
   onToggleView: () => void;
@@ -54,6 +57,9 @@ export function TopBar(p: TopProps) {
         <Icon name="sidebar" />
       </button>
       {p.ai}
+      <button class="icon-btn" onClick={p.onFocus} title={tr('专注阅读')} aria-label={tr('专注阅读')}>
+        <Icon name="focus" />
+      </button>
       <button class="icon-btn" onClick={p.onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
         <Icon name="gear" />
       </button>
@@ -75,6 +81,23 @@ interface FloatProps {
 
 /** 底部中间的浮动工具条：只在阅读区域出现。 */
 export function FloatingTools(p: FloatProps) {
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('paper-reader.toolsCollapsed') === '1');
+  const setC = (v: boolean) => {
+    setCollapsed(v);
+    try { localStorage.setItem('paper-reader.toolsCollapsed', v ? '1' : '0'); } catch { /* ignore */ }
+  };
+  if (collapsed) {
+    const cur = TOOLS.find((t) => t.id === p.tool) ?? TOOLS[0];
+    return (
+      <div class="float-dock">
+        <div class="float-tools">
+          <button class="float-btn on" onClick={() => setC(false)} title={tr('展开工具栏')} aria-label={tr('展开工具栏')}>
+            <Icon name={cur.icon} size={18} />
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div class="float-dock">
       {(p.tool === 'pen' || p.tool === 'marker' || p.tool === 'text') && (
@@ -106,9 +129,13 @@ export function FloatingTools(p: FloatProps) {
           aria-label={t.label}
           onClick={() => p.onTool(t.id)}
         >
-          <Icon name={t.icon} size={17} />
+          <Icon name={t.icon} size={18} />
         </button>
       ))}
+      <span class="float-sep" />
+      <button class="float-btn" onClick={() => setC(true)} title={tr('收起工具栏')} aria-label={tr('收起工具栏')}>
+        <Icon name="chevron-down" size={18} />
+      </button>
     </div>
     </div>
   );

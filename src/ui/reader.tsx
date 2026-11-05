@@ -185,6 +185,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const htmlTried = useRef<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
+  const [focus, setFocus] = useState(false);
   const toolRef = useRef(tool);
   toolRef.current = tool;
   const [draft, setDraft] = useState<DraftText | null>(null);
@@ -280,6 +281,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setFocus(false);
         setTool('select');
         setHlSel(null);
       }
@@ -1315,8 +1317,13 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const pageCount = loaded?.pdf.numPages ?? doc.progress.pages;
 
   return (
-    <div class="reader" data-tool={tool}>
-      <TopBar
+    <div class="reader" data-tool={tool} data-focus={focus ? 'true' : undefined}>
+      {focus && (
+        <button class="focus-exit" onClick={() => setFocus(false)} title={tr('退出专注')} aria-label={tr('退出专注')}>
+          <Icon name="close" size={14} />
+        </button>
+      )}
+      {!focus && <TopBar
         title={displayTitle(doc)}
         page={currentPage}
         pages={pageCount}
@@ -1333,6 +1340,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           setPrefs({ sidebar: !showSide });
         }}
         onOpenSettings={onOpenSettings}
+        onFocus={() => setFocus(true)}
         ai={
           aiReady ? (
             transJob ? (
@@ -1357,7 +1365,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
             )
           ) : null
         }
-      />
+      />}
 
       {newVersion && (
         <div class="banner">
@@ -1506,7 +1514,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           )}
 
         </div>
-        {!reflow && <FloatingTools
+        {!reflow && !focus && <FloatingTools
           tool={tool}
           onTool={setTool}
           color={tool === 'marker' ? prefs.markerColor : prefs.penColor}
@@ -1519,7 +1527,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         />}
         </div>
 
-        {showSide && (
+        {showSide && !focus && (
           <aside class="side">
             <section class="cite">
               <EditableText cls="cite-title" label={tr('标题')} value={doc.title} placeholder={tr('未识别到标题')} onSave={(v) => setMeta({ title: v })} />
