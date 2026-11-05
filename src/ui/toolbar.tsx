@@ -76,6 +76,20 @@ interface FloatProps {
 /** 底部中间的浮动工具条：只在阅读区域出现。 */
 export function FloatingTools(p: FloatProps) {
   return (
+    <div class="float-dock">
+      {(p.tool === 'pen' || p.tool === 'marker' || p.tool === 'text') && (
+        <div class="float-palette" role="group" aria-label={tr('颜色')}>
+          {p.palette.map((c) => (
+            <button
+              class={`ink-dot ${p.color === c ? 'on' : ''}`}
+              style={{ '--c': INK_HEX[c] }}
+              aria-label={tr('颜色 {c}', { c })}
+              aria-pressed={p.color === c}
+              onClick={() => p.onColor(c)}
+            />
+          ))}
+        </div>
+      )}
     <div class="float-tools" role="toolbar" aria-label={tr('标注工具')}>
       <button class="float-btn" onClick={p.onUndo} disabled={!p.canUndo} title={tr('撤销 ⌘Z')} aria-label={tr('撤销')}>
         <Icon name="undo" size={17} />
@@ -95,20 +109,7 @@ export function FloatingTools(p: FloatProps) {
           <Icon name={t.icon} size={17} />
         </button>
       ))}
-      {(p.tool === 'pen' || p.tool === 'marker' || p.tool === 'text') && (
-        <>
-          <span class="float-sep" />
-          {p.palette.map((c) => (
-            <button
-              class={`ink-dot ${p.color === c ? 'on' : ''}`}
-              style={{ background: INK_HEX[c] }}
-              aria-label={tr('颜色 {c}', { c })}
-              aria-pressed={p.color === c}
-              onClick={() => p.onColor(c)}
-            />
-          ))}
-        </>
-      )}
+    </div>
     </div>
   );
 }

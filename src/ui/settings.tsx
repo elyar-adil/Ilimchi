@@ -137,7 +137,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
           <p class="set-hint">{tr('柔和保留图片原色；反色让文字更锐利，但图片会变色；墨色为纯黑底白字，彩色图片保留颜色并压暗。')}</p>
           <div class="set app-icon-set">
             <span class="set-label">{tr('主题')}</span>
-            <div class="set-control">
+            <div class="set-control app-icon-control">
               <div class="app-icon-grid">
                 {APP_ICONS.map((t) => (
                   <button
@@ -172,6 +172,12 @@ export function Settings({ store, session, onClose, onSignOut }: {
             <span class="set-label">{tr('仓库')}</span>
             <div class="set-control">
               <span class="set-value">{session.config.owner}/{session.config.repo}</span>
+            </div>
+          </div>
+          <div class="set">
+            <span class="set-label">{tr('账户')}</span>
+            <div class="set-control">
+              <span class="set-value">{session.config.login}</span>
             </div>
           </div>
           <div class="set">
@@ -240,7 +246,7 @@ export function Settings({ store, session, onClose, onSignOut }: {
             </div>
           </div>
           <div class="set">
-            <span class="set-label">{tr('账户')}</span>
+            <span class="set-label">{tr('登录')}</span>
             <div class="set-control">
               <button class="ghost small" onClick={() => onSignOut(false)}>{tr('退出登录')}</button>
               <button class="ghost small danger" onClick={async () => (await askConfirm({ title: tr('清除本机数据？'), message: tr('会删除本机的缓存、令牌和 PDF 缓存。远端仓库中的笔记不会被删除。'), confirmLabel: tr('清除'), danger: true })) && (await onSignOut(true))}>{tr('清除本机数据')}</button>

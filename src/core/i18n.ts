@@ -316,6 +316,7 @@ const EN: Record<string, string> = {
   "读取仓库失败": "Failed to read the repository",
   "读取用户信息失败": "Failed to read user information",
   "账户": "Account",
+  "登录": "Sign-in",
   "跳到第 {page} 页": "Go to page {page}",
   "输入文字": "Enter text",
   "返回论文库": "Back to library",

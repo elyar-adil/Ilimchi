@@ -85,7 +85,7 @@ export function App() {
       {paperId && store.get(paperId) ? (
         <Reader key={paperId} store={store} paperId={paperId} onOpenSettings={() => setShowSettings(true)} />
       ) : (
-        <Library store={store} session={session} onOpenSettings={() => setShowSettings(true)} />
+        <Library store={store} onOpenSettings={() => setShowSettings(true)} />
       )}
       <ConfirmHost />
       {showSettings && (

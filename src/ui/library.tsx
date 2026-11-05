@@ -1,6 +1,5 @@
 import { tr } from '../core/i18n';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { Session } from '../core/auth';
 import { resolvePaper, fileRef } from '../core/ids';
 import { importLocalPdf } from '../core/pdfsource';
 import { pdfCache } from '../core/services';
@@ -37,7 +36,7 @@ function readingTimeLabel(ms: number): string {
     : tr('阅读 {n} 分钟', { n: minutes });
 }
 
-export function Library({ store, session, onOpenSettings }: { store: PaperStore; session: Session; onOpenSettings: () => void }) {
+export function Library({ store, onOpenSettings }: { store: PaperStore; onOpenSettings: () => void }) {
   useStoreRerender(store);
   const status = useSyncStatus(store);
   const [view, setView] = useState<View>({ kind: 'all' });
@@ -254,7 +253,10 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
 
         <div class="sidebar-foot">
           <SyncBadge status={status} onSync={() => void store.sync()} />
-          <span class="muted small account" title={`${session.config.owner}/${session.config.repo}`}>{session.config.login}</span>
+          <div class="grow" />
+          <button class="icon-btn" onClick={onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
+            <Icon name="gear" />
+          </button>
         </div>
       </aside>
 
@@ -288,7 +290,7 @@ export function Library({ store, session, onOpenSettings }: { store: PaperStore;
               )}
             </div>
           )}
-          <button class="icon-btn" onClick={onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
+          <button class="icon-btn head-settings" onClick={onOpenSettings} title={tr('设置')} aria-label={tr('设置')}>
             <Icon name="gear" />
           </button>
         </header>
