@@ -2,7 +2,7 @@ export type IconName =
   | 'reflow'
   | 'back' | 'select' | 'text' | 'pen' | 'marker' | 'eraser' | 'sidebar' | 'gear' | 'plus' | 'minus'
   | 'search' | 'library' | 'trash' | 'tag' | 'sun' | 'moon' | 'auto' | 'sync' | 'close'
-  | 'check' | 'folder' | 'untag' | 'sort' | 'list' | 'edit' | 'undo' | 'redo' | 'focus' | 'chevron-down';
+  | 'check' | 'folder' | 'untag' | 'sort' | 'list' | 'edit' | 'undo' | 'redo' | 'focus';
 
 /** 统一的 1.6 线宽线性图标，24 网格。 */
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
@@ -45,7 +45,6 @@ const PATHS: Record<IconName, preact.JSX.Element> = {
   auto: <path d="M12 4a8 8 0 1 0 0 16zM12 4a8 8 0 0 1 0 16" />,
   sync: <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v3.8h-3.8" />,
   focus: <path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" />,
-  'chevron-down': <path d="M6 9.5l6 6 6-6" />,
   close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
   undo: <path d="M9 14L4.5 9.5 9 5M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-2.5" />,
   redo: <path d="M15 14l4.5-4.5L15 5M19.5 9.5H10a5.5 5.5 0 0 0 0 11h2.5" />,

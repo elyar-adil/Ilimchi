@@ -186,6 +186,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
   const [focus, setFocus] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(() => localStorage.getItem('paper-reader.toolsHidden') !== '1');
   const toolRef = useRef(tool);
   toolRef.current = tool;
   const [draft, setDraft] = useState<DraftText | null>(null);
@@ -1341,6 +1342,13 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
         }}
         onOpenSettings={onOpenSettings}
         onFocus={() => setFocus(true)}
+        toolsOpen={toolsOpen}
+        onToggleTools={() => {
+          const v = !toolsOpen;
+          setToolsOpen(v);
+          if (!v) setTool('select');
+          try { localStorage.setItem('paper-reader.toolsHidden', v ? '0' : '1'); } catch { /* ignore */ }
+        }}
         ai={
           aiReady ? (
             transJob ? (
@@ -1514,7 +1522,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
           )}
 
         </div>
-        {!reflow && !focus && <FloatingTools
+        {!reflow && !focus && toolsOpen && <FloatingTools
           tool={tool}
           onTool={setTool}
           color={tool === 'marker' ? prefs.markerColor : prefs.penColor}

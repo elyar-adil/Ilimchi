@@ -1,5 +1,4 @@
 import { tr } from '../core/i18n';
-import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { Icon, type IconName } from './icons';
 import { INK_HEX, type InkColor } from '../core/types';
@@ -28,6 +27,9 @@ interface TopProps {
   onOpenSettings: () => void;
   /** 专注模式：隐藏所有界面，只留正文 */
   onFocus: () => void;
+  /** 标注工具条的显示开关（重排视图下没有工具条，不显示开关） */
+  toolsOpen: boolean;
+  onToggleTools: () => void;
   /** 是否处于重排视图 */
   reflow: boolean;
   onToggleView: () => void;
@@ -53,6 +55,11 @@ export function TopBar(p: TopProps) {
         <button onClick={p.onFit} title={p.reflow ? tr('默认字号') : tr('适应宽度')} class="seg-label">{p.zoomLabel}</button>
         <button onClick={p.onZoomIn} title={p.reflow ? tr('字号增大') : tr('放大')} aria-label={p.reflow ? tr('字号增大') : tr('放大')}><Icon name="plus" size={14} /></button>
       </div>
+      {!p.reflow && (
+        <button class={`icon-btn ${p.toolsOpen ? 'on' : ''}`} onClick={p.onToggleTools} title={p.toolsOpen ? tr('隐藏标注工具') : tr('显示标注工具')} aria-label={tr('标注工具')} aria-pressed={p.toolsOpen}>
+          <Icon name="pen" />
+        </button>
+      )}
       <button class={`icon-btn ${p.sidebarOpen ? 'on' : ''}`} onClick={p.onToggleSide} title={tr('笔记')} aria-label={tr('显示或隐藏笔记')}>
         <Icon name="sidebar" />
       </button>
@@ -81,23 +88,6 @@ interface FloatProps {
 
 /** 底部中间的浮动工具条：只在阅读区域出现。 */
 export function FloatingTools(p: FloatProps) {
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('paper-reader.toolsCollapsed') === '1');
-  const setC = (v: boolean) => {
-    setCollapsed(v);
-    try { localStorage.setItem('paper-reader.toolsCollapsed', v ? '1' : '0'); } catch { /* ignore */ }
-  };
-  if (collapsed) {
-    const cur = TOOLS.find((t) => t.id === p.tool) ?? TOOLS[0];
-    return (
-      <div class="float-dock">
-        <div class="float-tools">
-          <button class="float-btn on" onClick={() => setC(false)} title={tr('展开工具栏')} aria-label={tr('展开工具栏')}>
-            <Icon name={cur.icon} size={18} />
-          </button>
-        </div>
-      </div>
-    );
-  }
   return (
     <div class="float-dock">
       {(p.tool === 'pen' || p.tool === 'marker' || p.tool === 'text') && (
@@ -132,10 +122,6 @@ export function FloatingTools(p: FloatProps) {
           <Icon name={t.icon} size={18} />
         </button>
       ))}
-      <span class="float-sep" />
-      <button class="float-btn" onClick={() => setC(true)} title={tr('收起工具栏')} aria-label={tr('收起工具栏')}>
-        <Icon name="chevron-down" size={18} />
-      </button>
     </div>
     </div>
   );
