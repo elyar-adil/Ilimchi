@@ -147,7 +147,7 @@ export function Reader({ store, paperId, onOpenSettings }: { store: PaperStore; 
   /** 缩放提交后要还原的锚点：纵向按文档比例，横向按相对页面中心的偏移（已按新倍数换算） */
   const zoomAnchor = useRef<{ ratio: number; y: number; ax: number; dx: number } | null>(null);
   const [width, setWidth] = useState(800);
-  const [showSide, setShowSide] = useState(() => getPrefs().sidebar);
+  const [showSide, setShowSide] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
   /** 当前点选、可调整端点的高亮 */
   const [hlSel, setHlSel] = useState<string | null>(null);
