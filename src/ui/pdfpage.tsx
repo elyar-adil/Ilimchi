@@ -9,7 +9,7 @@ import type { TransBlock } from '../core/translate';
 import { drawTranslation, type TransMarkSpan } from './translayer';
 import { attachEndOfContent } from './endofcontent';
 import { installSelectionPaint, needsSelectionPaint } from './selpaint';
-import { fitSpans } from './spanfit';
+import { fitSpans, pageTextContent } from './spanfit';
 
 export interface DraftText {
   page: number;
@@ -183,6 +183,8 @@ export function PdfPage(props: Props) {
   // 文字层：每页只构建一次。缩放时 DOM 保持不动（选区不会丢），
   // 位置用百分比、字号用 --scale-factor，随页面尺寸实时变化；这里只负责同步该变量。
   const textLayerRef = useRef<InstanceType<typeof pdfjs.TextLayer> | null>(null);
+  /** 'pending'：构建中；'fitted'：已按 PDF 字体校正（缩放无需让 pdf.js 重排）；'native'：沿用 pdf.js 自己的布局 */
+  const layerModeRef = useRef<'pending' | 'fitted' | 'native'>('pending');
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
   useEffect(() => {
@@ -195,24 +197,29 @@ export function PdfPage(props: Props) {
       if (cancelled) return;
       const layer = layerRef.current;
       if (!layer) return;
+      // 文字内容与内嵌字体一并等好：校正文字位置需要真实字体的宽度（见 spanfit.ts）
+      const content = await pageTextContent(page);
+      if (cancelled || !layerRef.current) return;
       const vp = page.getViewport({ scale: scaleRef.current });
       layer.replaceChildren();
       applyScaleVars(wrapRef.current, scaleRef.current);
-      tl = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport: vp });
+      layerModeRef.current = 'pending';
+      tl = new pdfjs.TextLayer({ textContentSource: content, container: layer, viewport: vp });
       textLayerRef.current = tl;
       await tl.render();
       if (cancelled || !wrapRef.current) return;
-      // WebKit：按 PDF 给出的宽度重新校正每个 span（见 spanfit.ts）
-      if (needsSelectionPaint()) {
-        const sc = scaleRef.current;
-        if (sc !== vp.scale) tl.update({ viewport: page.getViewport({ scale: sc }) });
-        await fitSpans(page, sc, tl.textDivs, wrapRef.current);
-        if (cancelled) return;
+      const sc = scaleRef.current;
+      const fitted = await fitSpans(page, sc, tl.textDivs, wrapRef.current);
+      if (cancelled || !wrapRef.current) return;
+      layerModeRef.current = fitted ? 'fitted' : 'native';
+      // 构建期间若缩放过，补一次
+      if (scaleRef.current !== sc) {
+        if (fitted) await fitSpans(page, scaleRef.current, tl.textDivs, wrapRef.current);
+        else tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+        if (cancelled || !wrapRef.current) return;
       }
       detach = attachEndOfContent(layer);
       installSelectionPaint();
-      // 构建期间若缩放过，补一次更新
-      if (!needsSelectionPaint() && scaleRef.current !== vp.scale) tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
       onRenderedRef.current(num, wrapRef.current, layer);
     })().catch((e: unknown) => {
       if (!cancelled && !(e instanceof Error && /cancel/i.test(e.name + e.message))) console.error(`第 ${num} 页文字层失败`, e);
@@ -225,15 +232,19 @@ export function PdfPage(props: Props) {
     };
   }, [visible, pdf, num]);
 
-  // 缩放：与布局变化在同一次提交里同步 CSS 变量，并让 pdf.js 重算每个 span 的横向拉伸
+  // 缩放：与布局变化在同一次提交里同步 CSS 变量。
+  // 已校正的文字层全部用相对单位，Blink / Gecko 无需任何重算；WebKit 的 DOM 量宽在不同字号下略有出入，重新校正一次。
+  // 沿用 pdf.js 布局的页面则让 pdf.js 重算每个 span 的横向拉伸。
   useLayoutEffect(() => {
     applyScaleVars(wrapRef.current, scale);
     const tl = textLayerRef.current;
-    if (!tl) return;
+    if (!tl || layerModeRef.current === 'pending') return;
+    const mode = layerModeRef.current;
+    if (mode === 'fitted' && !needsSelectionPaint()) return;
     void pdf.getPage(num).then(async (page) => {
       if (textLayerRef.current !== tl) return;
-      tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
-      if (needsSelectionPaint() && wrapRef.current) await fitSpans(page, scaleRef.current, tl.textDivs, wrapRef.current);
+      if (mode === 'native') tl.update({ viewport: page.getViewport({ scale: scaleRef.current }) });
+      else if (wrapRef.current) await fitSpans(page, scaleRef.current, tl.textDivs, wrapRef.current);
     });
   }, [scale, pdf, num]);
 
